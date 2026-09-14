@@ -1,0 +1,3380 @@
+{
+  "schema_version": 1,
+  "project_id": "c54e8b36b18948ed8ee057951a2977e0",
+  "source_video": "..\\..\\新角色图\\anime\\idle2.mp4",
+  "video": {
+    "width": 1536,
+    "height": 1536,
+    "fps": 24.0,
+    "fps_rational": "24/1",
+    "frame_count": 56,
+    "duration": 2.333008
+  },
+  "chroma_key_settings": {
+    "green_color": [
+      0,
+      241,
+      0
+    ],
+    "tolerance": 0.22,
+    "softness": 0.16,
+    "edge_feather": 0.6,
+    "spill_suppression": true,
+    "despill_strength": 0.85,
+    "minimum_alpha": 4,
+    "noise_removal": 12,
+    "morphology": 0
+  },
+  "root_keyframes": {},
+  "tracking_settings": {
+    "roi_size": 0,
+    "min_confidence": 0.35,
+    "max_features": 100,
+    "estimation": "affine",
+    "body_roi": null,
+    "fallback": true
+  },
+  "motion_settings": {
+    "enabled": true,
+    "preset": "idle",
+    "x_policy": "LOCK",
+    "y_policy": "GROUND_LOCK",
+    "smoothing_window": 7,
+    "spike_threshold": 8.0,
+    "loop_correction": false,
+    "takeoff_frame": -1,
+    "apex_frame": -1,
+    "landing_frame": -1,
+    "ground_roi": null,
+    "roi_reference_root": null
+  },
+  "tracking_results": [
+    {
+      "index": 0,
+      "bbox": [
+        557,
+        495,
+        975,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        557,
+        495,
+        975,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 1,
+      "bbox": [
+        555,
+        495,
+        975,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        555,
+        495,
+        975,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 2,
+      "bbox": [
+        555,
+        495,
+        973,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        555,
+        495,
+        973,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 3,
+      "bbox": [
+        555,
+        495,
+        973,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        555,
+        495,
+        973,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 4,
+      "bbox": [
+        555,
+        495,
+        971,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        555,
+        495,
+        971,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 5,
+      "bbox": [
+        555,
+        495,
+        971,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        555,
+        495,
+        971,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 6,
+      "bbox": [
+        557,
+        495,
+        969,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        557,
+        495,
+        969,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 7,
+      "bbox": [
+        555,
+        495,
+        969,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        555,
+        495,
+        969,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 8,
+      "bbox": [
+        557,
+        495,
+        965,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        557,
+        495,
+        965,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 9,
+      "bbox": [
+        559,
+        495,
+        965,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        559,
+        495,
+        965,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 10,
+      "bbox": [
+        561,
+        497,
+        961,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        561,
+        497,
+        961,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 11,
+      "bbox": [
+        561,
+        497,
+        961,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        561,
+        497,
+        961,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 12,
+      "bbox": [
+        563,
+        497,
+        959,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        563,
+        497,
+        959,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 13,
+      "bbox": [
+        565,
+        497,
+        957,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        565,
+        497,
+        957,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 14,
+      "bbox": [
+        571,
+        497,
+        955,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        571,
+        497,
+        955,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 15,
+      "bbox": [
+        573,
+        497,
+        953,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        573,
+        497,
+        953,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 16,
+      "bbox": [
+        575,
+        497,
+        953,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        575,
+        497,
+        953,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 17,
+      "bbox": [
+        577,
+        497,
+        951,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        577,
+        497,
+        951,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 18,
+      "bbox": [
+        579,
+        497,
+        949,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        579,
+        497,
+        949,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 19,
+      "bbox": [
+        585,
+        497,
+        949,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        585,
+        497,
+        949,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 20,
+      "bbox": [
+        585,
+        497,
+        947,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        585,
+        497,
+        947,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 21,
+      "bbox": [
+        587,
+        497,
+        947,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        587,
+        497,
+        947,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 22,
+      "bbox": [
+        592,
+        497,
+        947,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        592,
+        497,
+        947,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 23,
+      "bbox": [
+        595,
+        497,
+        947,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        595,
+        497,
+        947,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 24,
+      "bbox": [
+        597,
+        497,
+        949,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        597,
+        497,
+        949,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 25,
+      "bbox": [
+        599,
+        497,
+        949,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        599,
+        497,
+        949,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 26,
+      "bbox": [
+        603,
+        497,
+        953,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        603,
+        497,
+        953,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 27,
+      "bbox": [
+        605,
+        497,
+        953,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        605,
+        497,
+        953,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 28,
+      "bbox": [
+        604,
+        497,
+        955,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        604,
+        497,
+        955,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 29,
+      "bbox": [
+        607,
+        497,
+        957,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        607,
+        497,
+        957,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 30,
+      "bbox": [
+        607,
+        497,
+        959,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        607,
+        497,
+        959,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 31,
+      "bbox": [
+        607,
+        497,
+        961,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        607,
+        497,
+        961,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 32,
+      "bbox": [
+        607,
+        497,
+        961,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        607,
+        497,
+        961,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 33,
+      "bbox": [
+        607,
+        497,
+        961,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        607,
+        497,
+        961,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 34,
+      "bbox": [
+        603,
+        495,
+        965,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        603,
+        495,
+        965,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 35,
+      "bbox": [
+        599,
+        495,
+        967,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        599,
+        495,
+        967,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 36,
+      "bbox": [
+        599,
+        495,
+        969,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        599,
+        495,
+        969,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 37,
+      "bbox": [
+        595,
+        495,
+        971,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        595,
+        495,
+        971,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 38,
+      "bbox": [
+        591,
+        495,
+        971,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        591,
+        495,
+        971,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 39,
+      "bbox": [
+        591,
+        495,
+        973,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        591,
+        495,
+        973,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 40,
+      "bbox": [
+        587,
+        495,
+        975,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        587,
+        495,
+        975,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 41,
+      "bbox": [
+        585,
+        495,
+        975,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        585,
+        495,
+        975,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 42,
+      "bbox": [
+        581,
+        495,
+        977,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        581,
+        495,
+        977,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 43,
+      "bbox": [
+        579,
+        495,
+        977,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        579,
+        495,
+        977,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 44,
+      "bbox": [
+        577,
+        495,
+        977,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        577,
+        495,
+        977,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 45,
+      "bbox": [
+        575,
+        495,
+        979,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        575,
+        495,
+        979,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 46,
+      "bbox": [
+        571,
+        495,
+        979,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        571,
+        495,
+        979,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 47,
+      "bbox": [
+        567,
+        495,
+        979,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        567,
+        495,
+        979,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 48,
+      "bbox": [
+        567,
+        495,
+        979,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        567,
+        495,
+        979,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 49,
+      "bbox": [
+        565,
+        495,
+        981,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        565,
+        495,
+        981,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 50,
+      "bbox": [
+        563,
+        495,
+        979,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        563,
+        495,
+        979,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 51,
+      "bbox": [
+        561,
+        495,
+        979,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        561,
+        495,
+        979,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 52,
+      "bbox": [
+        559,
+        495,
+        979,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        559,
+        495,
+        979,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 53,
+      "bbox": [
+        559,
+        495,
+        977,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        559,
+        495,
+        977,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 54,
+      "bbox": [
+        557,
+        495,
+        977,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        557,
+        495,
+        977,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    },
+    {
+      "index": 55,
+      "bbox": [
+        555,
+        495,
+        977,
+        1237
+      ],
+      "root": [
+        0.0,
+        0.0
+      ],
+      "tracking_confidence": 0.0,
+      "warnings": [],
+      "features": [],
+      "manual": false,
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "cell_root": [
+        0.0,
+        0.0
+      ],
+      "cell_bbox": [
+        555,
+        495,
+        977,
+        1237
+      ],
+      "raw_root": null,
+      "filtered_root": null,
+      "target_root": null,
+      "motion_root": null,
+      "correction": [
+        0.0,
+        0.0
+      ],
+      "root_motion": [
+        0.0,
+        0.0
+      ],
+      "velocity": [
+        0.0,
+        0.0
+      ],
+      "ground": null,
+      "cell_ground": null,
+      "ground_roi": null,
+      "tracking_method": "passthrough",
+      "tracking_metrics": {},
+      "effective_policy": [
+        "PASSTHROUGH",
+        "PASSTHROUGH"
+      ],
+      "tracked_root": null,
+      "character_correction": null
+    }
+  ],
+  "alignment_mode": "ROOT X + GROUND Y",
+  "sprite_cell": {
+    "mode": "AUTO",
+    "width": 512,
+    "height": 512,
+    "round_up": 0,
+    "padding": 16,
+    "bottom_margin": 16,
+    "alpha_threshold": 16,
+    "min_component_size": 12,
+    "canvas_mode": "source_canvas",
+    "target_width": 512,
+    "target_height": 512,
+    "preserve_aspect_ratio": true
+  },
+  "scale": 0.3333333333333333,
+  "lock_character_scale": true,
+  "export_settings": {
+    "animation_name": "idle2",
+    "columns": 8,
+    "loop": true
+  },
+  "layout": {
+    "width": 1536,
+    "height": 1536,
+    "target_root": [
+      0.0,
+      0.0
+    ],
+    "ground_baseline": 0.0,
+    "required_width": 1536,
+    "required_height": 1536,
+    "clipped_frames": [],
+    "canvas_mode": "source_canvas",
+    "normalize_scale": [
+      1.0,
+      1.0
+    ],
+    "normalize_offset": [
+      0.0,
+      0.0
+    ],
+    "source_width": 1536,
+    "source_height": 1536
+  },
+  "character_profile": null,
+  "animation_id": "ffc85a632cf74d84acf1495d6b98c252",
+  "animations": {},
+  "input_mode": "video",
+  "sequence_folder": "",
+  "sequence_fps": 24.0,
+  "passthrough_alignment": false,
+  "sequence_size_policy": "strict",
+  "sequence_files": [],
+  "sequence_sizes": [],
+  "sequence_alpha": "RGBA",
+  "sequence_formats": [],
+  "project_name": "idle2",
+  "project_version": "0.4",
+  "project_type": "character_animation",
+  "default_fps": 24.0,
+  "source_canvas": [
+    1536,
+    1536
+  ],
+  "output_canvas": [
+    512,
+    512
+  ],
+  "processing_mode": "keyed_passthrough",
+  "full_processing_canvas_mode": "normalize_source",
+  "fps": 24.0,
+  "frame_count": 56,
+  "green_color": [
+    0,
+    241,
+    0
+  ],
+  "padding": 16
+}

@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-video-to-sprite"
+version = "0.4.0"
+description = "Frame-accurate chroma key and sprite alignment desktop application"
+requires-python = ">=3.12,<3.15"
+dependencies = ["PySide6>=6.7,<7", "opencv-python-headless>=4.10,<5", "numpy>=1.26,<3", "Pillow>=10.4,<13"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "pyinstaller>=6,<7"]
+
+[project.gui-scripts]
+ai-video-to-sprite = "app.main:main"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.setuptools.package-data]
+"app.i18n" = ["*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

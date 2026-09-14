@@ -1,0 +1,52 @@
+﻿# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+
+# Python test/cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Build / packaged EXE
+build/
+dist/
+release-*/
+
+# Runtime cache / temp
+cache/
+.cache/
+work/
+temp/
+tmp/
+
+# Generated output
+exports/
+previews/
+logs/
+
+# AI source videos
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.bak
+*~
+
+# Test generated output
+.test-output/

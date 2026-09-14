@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "project_id": "b13c2b4aa93747789250ad836bf36410",
+  "source_video": "keyed_passthrough_56.mp4",
+  "video": {
+    "width": 0,
+    "height": 0,
+    "fps": 0.0,
+    "fps_rational": "0/1",
+    "frame_count": 0,
+    "duration": 0.0
+  },
+  "chroma_key_settings": {
+    "green_color": [
+      8,
+      224,
+      24
+    ],
+    "tolerance": 0.22,
+    "softness": 0.16,
+    "edge_feather": 0.6,
+    "spill_suppression": true,
+    "despill_strength": 0.85,
+    "minimum_alpha": 4,
+    "noise_removal": 12,
+    "morphology": 0
+  },
+  "root_keyframes": {
+    "0": [
+      104.0,
+      122.4
+    ]
+  },
+  "tracking_settings": {
+    "roi_size": 0,
+    "min_confidence": 0.35,
+    "max_features": 100,
+    "estimation": "affine",
+    "body_roi": null,
+    "fallback": true
+  },
+  "motion_settings": {
+    "enabled": false,
+    "preset": "idle",
+    "x_policy": "LOCK",
+    "y_policy": "GROUND_LOCK",
+    "smoothing_window": 7,
+    "spike_threshold": 8.0,
+    "loop_correction": false,
+    "takeoff_frame": -1,
+    "apex_frame": -1,
+    "landing_frame": -1,
+    "ground_roi": null,
+    "roi_reference_root": null
+  },
+  "tracking_results": [],
+  "alignment_mode": "ROOT X + GROUND Y",
+  "sprite_cell": {
+    "mode": "AUTO",
+    "width": 512,
+    "height": 512,
+    "round_up": 0,
+    "padding": 16,
+    "bottom_margin": 16,
+    "alpha_threshold": 16,
+    "min_component_size": 12,
+    "canvas_mode": "auto_bounds",
+    "target_width": 512,
+    "target_height": 512,
+    "preserve_aspect_ratio": true
+  },
+  "scale": 1.0,
+  "lock_character_scale": true,
+  "export_settings": {
+    "animation_name": "keyed_passthrough_56",
+    "columns": 8,
+    "loop": true
+  },
+  "layout": null,
+  "character_profile": null,
+  "animation_id": "default",
+  "animations": {},
+  "input_mode": "video",
+  "sequence_folder": "",
+  "sequence_fps": 24.0,
+  "passthrough_alignment": false,
+  "sequence_size_policy": "strict",
+  "sequence_files": [],
+  "sequence_sizes": [],
+  "sequence_alpha": "RGBA",
+  "sequence_formats": [],
+  "project_name": "",
+  "project_version": "0.4",
+  "project_type": "character_animation",
+  "default_fps": 24.0,
+  "source_canvas": [
+    1536,
+    1536
+  ],
+  "output_canvas": [
+    512,
+    512
+  ],
+  "processing_mode": "full",
+  "full_processing_canvas_mode": "auto_bounds",
+  "fps": 0.0,
+  "frame_count": 0,
+  "green_color": [
+    8,
+    224,
+    24
+  ],
+  "padding": 16
+}

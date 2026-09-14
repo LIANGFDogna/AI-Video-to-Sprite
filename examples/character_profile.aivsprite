@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "project_id": "7ea6648eb2bf4fd68f0974a06a270d04",
+  "source_video": "normalized_512.mp4",
+  "video": {
+    "width": 1536,
+    "height": 1536,
+    "fps": 24.0,
+    "fps_rational": "24/1",
+    "frame_count": 22,
+    "duration": 0.916667
+  },
+  "chroma_key_settings": {
+    "green_color": [
+      6,
+      222,
+      23
+    ],
+    "tolerance": 0.22,
+    "softness": 0.16,
+    "edge_feather": 0.6,
+    "spill_suppression": true,
+    "despill_strength": 0.85,
+    "minimum_alpha": 4,
+    "noise_removal": 12,
+    "morphology": 0
+  },
+  "root_keyframes": {
+    "0": [
+      637.2956345431195,
+      799.0
+    ]
+  },
+  "tracking_settings": {
+    "roi_size": 0,
+    "min_confidence": 0.35,
+    "max_features": 100,
+    "estimation": "affine",
+    "body_roi": null,
+    "fallback": true
+  },
+  "motion_settings": {
+    "enabled": true,
+    "preset": "idle",
+    "x_policy": "LOCK",
+    "y_policy": "GROUND_LOCK",
+    "smoothing_window": 7,
+    "spike_threshold": 8.0,
+    "loop_correction": false,
+    "takeoff_frame": -1,
+    "apex_frame": -1,
+    "landing_frame": -1,
+    "ground_roi": null,
+    "roi_reference_root": null
+  },
+  "tracking_results": [],
+  "alignment_mode": "ROOT X + GROUND Y",
+  "sprite_cell": {
+    "mode": "AUTO",
+    "width": 512,
+    "height": 512,
+    "round_up": 0,
+    "padding": 16,
+    "bottom_margin": 16,
+    "alpha_threshold": 16,
+    "min_component_size": 12,
+    "canvas_mode": "normalize_source",
+    "target_width": 512,
+    "target_height": 512,
+    "preserve_aspect_ratio": true
+  },
+  "scale": 1.0,
+  "lock_character_scale": true,
+  "export_settings": {
+    "animation_name": "character_idle",
+    "columns": 10,
+    "loop": true
+  },
+  "layout": null,
+  "character_profile": {
+    "canvas_size": [
+      512,
+      512
+    ],
+    "character_scale": 0.3333333333333333,
+    "ground_origin": [
+      256.0,
+      480.0
+    ],
+    "canonical_root": [
+      256.0,
+      350.0
+    ],
+    "reference_box_half_width": 126.10000000000001,
+    "facing": "right",
+    "canonical_root_offset": [
+      0.0,
+      -130.0
+    ]
+  },
+  "animation_id": "default",
+  "animations": {},
+  "fps": 24.0,
+  "frame_count": 22,
+  "green_color": [
+    6,
+    222,
+    23
+  ],
+  "padding": 16
+}
