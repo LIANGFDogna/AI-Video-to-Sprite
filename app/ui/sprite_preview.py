@@ -17,7 +17,7 @@ class SpritePreview(VideoViewer):
         s, layout = self.display_scale, p.layout
         cw, ch = layout.width * s, layout.height * s
         cols = p.export_settings.columns
-        rows = math.ceil(p.video.frame_count / cols)
+        rows = math.ceil(p.output_count / cols)
         if self.overlays["canvas"]:
             painter.setPen(self.pen("#a0aec2"))
             painter.drawRect(self.sceneRect())
@@ -31,7 +31,7 @@ class SpritePreview(VideoViewer):
         font = QFont()
         font.setPixelSize(max(1, round(11 / screen_scale)))
         painter.setFont(font)
-        for f in p.tracking_results:
+        for f in p.output_frames:
             x, y = (f.index % cols) * cw, (f.index // cols) * ch
             if not QRectF(x, y, cw, ch).intersects(rect):
                 continue

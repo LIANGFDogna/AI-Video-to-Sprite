@@ -1,8 +1,101 @@
 # Validation record · v0.4
 
-## 2026-09-14 本轮：项目标准画布
+## 2026-09-16：Path Memory / UI Audit
 
-Windows x64 / Python 3.12.14。全量pytest **125 passed，38.20秒**，新增11项；中英文560条，源码覆盖和变量检查通过。前轮新项目直通测试的预期按新要求改为先适配项目画布，其余测试保留。
+交付前完整回归：**191 passed，60.89秒**，`build/path-complete-regression.log`。新增28项（21项路径服务、7项窗口与业务接入），保留原163项测试。**705 keys**中英键集、占位符及源码覆盖通过。第一次完整回归发现直通模式Root/Motion字段重新启用，修正UI状态优先级后两次全量191项通过；未修改像素算法。31个core/models/exporters文件逐个SHA256等于PATH_MEMORY_PLAN.md基线，`build/path-protected-hashes.json`为passed。
+
+原生窗口：`build/path-native-actual100`实际DPR1.0；`build/path-native-final-1.25`实际DPR1.25且英文；`build/path-native-150d`实际DPR1.5。exercise.json与**独立第二进程**restart.json均passed。视频A、透明序列B、Sheet导出C、工程D和新建父目录独立恢复；取消保持历史。中文、空格、深层目录超过275字符、新建1366×768/1920×1080/2560×1440等效逻辑尺寸固定底部按钮通过。
+
+100%初次配置被本机125%系统缩放影响，`path-native-final-1`的实际DPR1.25，**不作为100%证据**。后续用明确屏幕因子1.25×全局0.8得到实际1.0；正式构建对每个报告断言实际DPR，防止误报。
+
+UI审查计数：10个业务FileDialog调用、120个控件/Action构造或帮助函数声明点、149个信号连接点。19种窗口/状态记录438次控件观察；去除主窗口空/就绪重复状态为286条控件实例记录（含Qt内部控件，不代表286个独立产品功能）。完整清单、覆盖方式、修复和限制见UI_AUDIT.md。UI脚本自身曾发生文件选择模型异步、弹窗重入/未保存确认及变量作用域问题，均修正后才计作通过。
+
+### 冻结候选验证（本轮）
+
+`build.ps1 -DistPath release-v0.4-path-memory-ui-audit` exit code 0，日志build/release-path-memory-ui-audit.log。独立EXE启动、旧视频Normalize、旧CharacterProfile、无FFmpeg序列、新建/RGBA16/文件夹、56帧视频直通与返回完整处理、项目Canvas Fit、编辑器三流程和Character Reference 125/150%均通过。
+
+新增路径冻结证据（每项包含exercise.json与第二进程restart.json，均passed）：
+
+- 实际DPR 1.0 / zh_CN：`build/path-frozen-1-76d962a30abe41b1a9e2bf21aa513a08`。
+- 实际DPR 1.25 / en_US：`build/path-frozen-1.25-215af90038d04203bfadc9012a164aa2`。
+- 实际DPR 1.5 / zh_CN：`build/path-frozen-1.5-b2bebea0acce433ca6bfa55321ac37b4`。
+
+构建标识`20260915-path-memory-ui-audit`；候选EXE文件时间2026-09-16 00:05:39；SHA256 `B61D423A4507E2AC2D16FC5C3ECE3AB76620DD01CC5476DB43B96676F19CEEB8`。正式dist已替换并通过独立启动验收，见下节。
+
+### 正式dist发布与实际启动（本轮完成）
+
+2026-09-16用户继续后确认旧程序已退出，执行scripts/publish_release.ps1成功。正式路径：`E:\AI Video to Sprite\dist\AI Video to Sprite\AI Video to Sprite.exe`。运行文件已备份到`E:\AI Video to Sprite\build\previous-runtime-0e4d4b64222b4b29a91af6034f0985dc`，既有工程、素材、cache和exports未删除。根目录启动bat继续指向正式dist。
+
+正式EXE文件修改时间：`2026-09-16T00:05:39`；发布完成记录：`2026-09-16T06:35:35+08:00`；SHA256 `B61D423A4507E2AC2D16FC5C3ECE3AB76620DD01CC5476DB43B96676F19CEEB8`，与候选成品一致。**实际从上述dist EXE启动**新建/视频A/序列B/导出C/工程D/另存/预览/对话框审查，并关闭再以独立进程重新验证路径恢复；100/125/150%全部通过。
+
+- 实际DPR1.0，zh_CN：`build/path-published-1-064bcc4c9a49414c8418ff4708992ead`中的exercise.json/restart.json均passed。
+- 实际DPR1.25，en_US：`build/path-published-1.25-909a1ecbe2a0424581ae51889e7f7e9f`中的exercise.json/restart.json均passed。
+- 实际DPR1.5，zh_CN：`build/path-published-1.5-3a805ba7c70e4122b3728d4dd6ed174b`中的exercise.json/restart.json均passed。
+
+正式验收汇总build/path-published-receipt.json；最终交付build/path-memory-delivery.json。每轮438条窗口状态观察（去除主窗口重复状态286条控件实例）；三次属于重复DPI验收，不累计成更多产品按钮。
+
+以下旧版记录保留为历史。
+
+## 2026-09-15：Character Reference 第一阶段
+
+最终全量 **163 passed，70.11秒**，`build/reference-complete-regression.log`；包含全部旧测试及新增角色参考/缺失素材UI保护。中英文 **689 keys**，键集/变量/源码覆盖检查通过。初次复核曾遇到一次Windows WinError5目录重命名拒绝，位深导出12项独立复测与上述完整163项均通过，未更改导出事务语义。
+
+覆盖参考创建、锁定、Ground/YAxis/Origin拖动、1/10px微调、Idle像素不变、项目唯一/各动画偏移独立、全帧统一XY、RGBA16与1536→512、越界非阻塞、Undo/Redo、旧CharacterProfile兼容和保存重开。输入1024×1536/1920×1536/1920×1080的中心裁补在Reference修改前后逐像素一致；真实视频keyed直通不调用重复decode/key/Root。
+
+原生窗口验收：`build/reference-native-actual125/validation.json`（DPR1.25）与 `build/reference-native-150-verified/validation.json`（编辑窗口及校准窗口均DPR1.5）通过。已查看150%校准/Run编辑截图：轴、原点坐标、整动画XY和保存按钮清晰；Ghost固定，属性区无水平滚动。早期仅对第一个显示器设置150%的报告实际为125%，不计作150%证据；发布测试现对所有显示器显式设置缩放并断言实际DPR。
+
+新增 `app/character_reference_smoke.py` 为原生/冻结通用入口。真实1024×1536 Idle MP4→1536项目左右补256→抠像→直通→校准固定Idle→锁定→设置Idle自身Offset→导入Run RGBA→共轴及固定Ghost→拖动全动画/1px与Shift10px→512输出→播放→6张PNG/3列Sheet逐像素一致→Undo/Redo→保存重开→Run内重编辑仍读取Idle原图并取消。每次结果JSON记录实际DPR，避免系统缩放与QT_SCALE_FACTOR叠乘误报。
+
+### 本轮冻结成品
+
+构建 `build.ps1 -DistPath release-v0.4-character-reference` **exit code 0**，日志 `build/release-character-reference.log`。已完成真实EXE启动、旧视频Normalize、CharacterProfile、无FFmpeg序列、新项目/RGBA16/FolderPicker、56帧视频直通、五种项目画布输入、编辑器三流程，以及角色参考125%/150%全流程。
+
+冻结角色参考证据：
+
+- 实际DPR 1.25，校准窗口同值：`build/reference-frozen-1.25-068359009e10478a8f7f72f6800a78c1/validation.json`，passed。
+- 实际DPR 1.5，校准窗口同值：`build/reference-frozen-1.5-3920b1a78cde4e60aaba6392f327bb9a/validation.json`，passed。
+
+成品构建标识：`20260915-character-reference`；窗口标题可见。SHA256：`97CB2A6465A4EB85FF820F1949313759BF7CACCF9A5D2B0BD17A53159761A361`。
+
+候选程序：`release-v0.4-character-reference/AI Video to Sprite/AI Video to Sprite.exe`。
+
+**已发布到实际日常路径**：`E:\AI Video to Sprite\dist\AI Video to Sprite\AI Video to Sprite.exe`。用户确认保存关闭后，`scripts/publish_release.ps1 -SourceRoot release-v0.4-character-reference`成功更新并实际启动dist Smoke Test，exit code 0。日志 `build/publish-character-reference.log`；旧运行文件备份 `build/previous-runtime-90f7f9860e7749bda3e88d5b6b79b4e9`。用户工程、素材、缓存、已有示例和导出均保留。
+
+实际dist EXE文件时间：`2026-09-15T18:40:17`；SHA256与冻结验收候选完全一致。根目录 `Start AI Video to Sprite.bat`继续指向该dist EXE。
+
+随后**直接启动同一个dist EXE**：`--smoke-character-reference build/published-reference-150`，exit code 0。`build/published-reference-150/validation.json`记录编辑/校准DPR均1.5、真实MP4抠像与中心补边、固定Idle校准/共轴/整动画XY、原Idle缓存mtime不变、Ghost忽略双方Offset、6帧最终Preview/PNG/Sheet像素一致、Undo/Redo及保存重开全部passed。不是从源码或旧release目录运行。测试窗口已正常退出。
+
+本轮限制：每项目一套角色参考；只新增整动画XY，旧逐帧编辑保留独立入口；参考/Ghost均辅助显示；完整Library/Character Templates/Animation Set目录结构为下一阶段。
+
+## 2026-09-15：五页帧动画编辑器
+
+Windows x64 / Python 3.12.14。最终全量 **147 passed，45.71 秒**，日志 `build/editor-final-regression.log`；中英文 **655 keys**，源码覆盖、键集合与变量检查通过。保留旧视频/序列/高位深/画布/直通/角色基准测试；旧 UI 断言仅将入口迁移到五页与编辑页内“对齐”标签。
+
+- 39→20 Ease In Out，保留首尾和标记关键帧；单/多删除、复制独立实例、选段倒放、跨轨移动、锁定禁止修改、Undo/Redo 与 Root 修正。
+- 源索引和源文件不改变；位移按最终 Cell 像素应用，透明隐藏 RGB、Alpha 与身份变换逐字节保留；多轨浮点预乘合成顺序正确。
+- 选段目标时长、曲线、不同停顿分布、自定义 Bezier 单调校验；位置/比例/透明度插值保留中间关键帧。
+- 实时 Provider 与落盘 final、Sheet/PNG/JSON 的像素和时长一致；参考轨不导出，空时间线不能误导出旧结果。
+- 真实 Qt 点击/Ctrl/Shift/框选、鼠标跨轨拖动、曲线控制柄、画布拖动和 Shift 微移通过；Root 修改使缓存失效后仍可浏览源帧并向后步进。
+
+150% 原生 Qt 三流程：`build/editor-native-150-verified/validation.json` **passed**，DPR=1.5，五个页面；源码入口 `python -m app.main --smoke-editor <新目录>`。
+
+| 实际操作 | 输出 | 验证 |
+|---|---|---|
+| 39 帧全选→20 帧→缓入缓出 | 20 帧，0.8333333333 秒 | 首末源帧 0/38；实时预览与全部 PNG/JSON duration 相同 |
+| Undo→拖动第12帧(-6,+14)→第13帧数值偏移→删除3帧→复制1帧→末段倒放 | 37 帧，1.5416666667 秒 | 源39张不变；洋葱皮/残影仅预览；全部 PNG 一致 |
+| 复制末段并倒放→中段2倍速→特效轨→参考轨→Bezier | 46 个输出时间区间，1.5003333333 秒 | 时间边界合成、PNG逐帧一致；工程保存重开保持编辑数据与输出 |
+
+已查看 `editor-20-ease.png`：深色文字清晰、选中帧高亮、锁定列完整、属性无水平滚动、旧重复视图工具栏隐藏；曲线与“应用目标帧数”可见。自定义 Bezier 控件两行显示，其他曲线隐藏数值控件。
+
+旧视频实际窗口：`build/editor-old-video-verified.log` **passed**；24 帧，Cell=197×221，最低跟踪置信度0.94858656，Root 添加/删除、跟踪、编辑内播放、保存重开和 Godot 导出通过。项目标准画布仍先于跟踪和时间线，视频抠像直通仍无需 Root。
+
+编辑器独立候选已通过冻结125%/150%三流程验收（`build/editor-smoke-a66f826db5e5436c8feb146b3cdf2506/validation.json`、`build/editor-frozen-150/validation.json`）。本轮合并角色参考后再次构建，最终dist以本文件最上方最新记录为准。下文为历史版本记录。
+
+---
+
+## 2026-09-14 历史：项目标准画布
+
+Windows x64 / Python 3.12.14。全量pytest **136 passed，40.00秒**（画布11项、此次直通UI2项、未接入UI的编辑模型9项）；中英文574条，源码覆盖和变量检查通过。前轮新项目直通测试的预期按新要求改为先适配项目画布，其余测试保留。
 
 - 1024×1536左右补256、1920×1536左右裁192、1536×1024上下补256、1536×1920上下裁192、1920×1080左右裁192且上下补228；逐像素切片一致，补区RGBA全0。
 - 奇数差的右/下余量、uint16不插值、不量化；混尺寸每帧按自身原中心适配，无最大画布中转，无Root/Motion/Profile调用。
@@ -12,7 +105,24 @@ Windows x64 / Python 3.12.14。全量pytest **125 passed，38.20秒**，新增11
 
 真实Qt验收：`python -m app.main --smoke-project-canvas .test-output/project-canvas-150-final`，**exit code 0**，实际DPR1.5。创建1536项目，导入上述五种实际PNG尺寸；Cell均1536，位置完全由尺寸中心差派生；Sheet为12288×1536（8列，末3格透明），Preview/Export相同并保存重开。截图与validation.json保存在该目录。
 
-本轮发布包将放在独立 `release-v0.4-canvas/AI Video to Sprite`，打包及冻结检查结果完成后补充。
+本轮 `.\build.ps1 -DistPath release-v0.4-canvas` **exit code 0**，构建日志 `build/release-canvas-direct.log`。冻结EXE完成启动、旧视频Normalize、Character Profile、无FFmpeg序列、新项目/RGBA16、视频直通和项目画布验收。
+
+125%冻结证据：`build/keyed-smoke-9e11287848224158a20f2dcdba941ae6/validation.json`、`build/canvas-smoke-1fb8a3e2610c43cfacd32e0e9c765718/validation.json`，均passed。
+
+随后 `.\scripts\publish_release.ps1 -SourceRoot release-v0.4-canvas` 将同一已验收程序更新到 **`dist/AI Video to Sprite/AI Video to Sprite.exe`**，启动检查成功。发布日志 `build/publish-canvas-direct.log`；旧运行文件备份在 `build/previous-runtime-66db408cd2d54c80923bf91faa4a47cf`。发布仅覆盖程序、依赖和文档，保留原工程、素材、缓存、日志及已有示例；新建根目录 `Start AI Video to Sprite.bat` 固定启动dist。
+
+最终EXE的SHA256（dist与验收目录一致）：
+`AC86205CA8E5C7613C8155F83226F1CE4B696A17E9807BA20C52F496B2ADF5CC`
+
+直接运行已更新的dist EXE进行150%验收，均 **exit code 0**：
+
+- `build/published-keyed-150/validation.json`：实际DPR1.5，56帧、24 FPS；通用Build无Root进入Sprite选择；直接构建native与keyed逐像素一致；512输出Sheet为4096×3584；Preview/Export、保存重开、恢复完整流程不重做Key均通过。
+- `build/published-canvas-150/validation.json`：实际DPR1.5，新建1536项目及五种输入尺寸；透明补边和中心裁切正确；最终Preview/Export一致，保存重开成功。
+- 人工查看最终EXE截图 `sprite-keyed-choice.png` 和 `sequence-canvas-fit.png`：两入口完整可见、文字清晰、尺寸说明滚动显示、导入按钮可见。新建、预览及导出截图同目录保存。
+
+此历史轮次交付为七阶段V0.4。帧编辑器模型的9项测试属于预研，尚未接入主界面，不计为五阶段编辑器功能完成。
+
+新增直通入口回归：无Root时从通用Build进入Sprite选择，继续Root保持完整模式；直接构建使用已有RGBA。在旧画布和128×112项目画布两种情况下，56帧无额外跟踪、抠像、对齐调用，PNG/Preview逐像素相等。源全量测试日志：`build/canvas-direct-pytest.log`。
 
 ---
 

@@ -35,3 +35,13 @@ Root 后新增 Motion：raw_root → filtered_root / motion_root → target_root
 视频 Decode → 源尺寸 Chroma → 用户选择 keyed_passthrough → keyed RGBA → 原画布 / 显式 Normalize → final Cell → 同一 Provider / Sheet / Preview / Export。没有 Root/Motion/Align/Profile 处理，位移保留；Alpha 检测只写 bbox。视频直通签名依赖 key_signature，尺寸变换为全帧公共常量。
 
 启用完整处理 → 恢复此前 canvas_mode → 复用原 keyed cache → Root/Motion/Align。手动种子、动作策略、Profile 保留。processing_mode 保存到动画快照；旧工程 full；切换后旧最终预览失效。
+
+## 编辑结果
+原素材→项目画布→抠像→原自动对齐或直通→基础aligned Cell→时间线重映射/实例变换/多轨合成→final PNG+final_timing→FinalFrameProvider→编辑预览/独立预览/Sheet/导出。源帧数独立于输出帧数；秒时长不由预览FPS覆盖。reference轨不合入导出。
+
+## 手工角色参考分支
+
+原素材→既有中心CanvasFit→Key/RGBA→项目固定参考Overlay→用户显式Animation Offset（源画布像素）→既有输出Normalize→原时间线实例变换/合成→FinalFrameProvider→所有预览/导出。Offset直通路径复用keyed/raw，在项目画布透明裁切后输出Resize；ReferenceSource读取原Idle并独立绘制固定Ghost。
+
+## 文件选择路径
+AppSettings.path_state→PathMemory.resolve(purpose,project)→统一Qt Picker→业务Worker→成功回调记用途目录/last_location。取消/失败不写。新建project_create独立走有效父目录→E/D/C Work→Home。

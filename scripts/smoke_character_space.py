@@ -73,6 +73,7 @@ def run(output, language, new_project=False):
         if new_project:
             assert window.project.project_name == "MainCharacter" and window.project_file.is_file()
         window.steps.setCurrentIndex(2)
+        window.editor.alignment()
         window.open_character_space()
         wait(lambda: window.worker is None and window.character_editor is not None)
         editor = window.character_editor
@@ -153,6 +154,7 @@ def run(output, language, new_project=False):
             assert asdict(window.project.character_profile) == shared
             assert not window.project.root_keyframes
             window.steps.setCurrentIndex(2)
+            window.editor.alignment()
             wait(lambda: window._preview_frame_index == 0 and window.preview_worker is None)
             # A new source detection seed is distinct from the immutable canonical point.
             window._set_root(*source_root)

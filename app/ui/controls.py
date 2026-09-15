@@ -121,6 +121,9 @@ class ParameterPanel(QWidget):
         button = QPushButton(t(label))
         if primary:
             button.setObjectName("primary")
+        button.setProperty("uiAction",action)
+        button.setToolTip(t(label))
+        button.setAutoDefault(False)
         button.clicked.connect(lambda: self.action.emit(action))
         self.layout.addWidget(button)
         return button

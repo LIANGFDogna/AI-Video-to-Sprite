@@ -73,7 +73,13 @@ def start_keyed_smoke(app, window, project_path, output=None):
                 window.grab().save(str(output / "keyed-choice.png"))
                 state["keyed_times"] = [frame_path(window.cache_dir / "keyed_frames", i).stat().st_mtime_ns for i in range(p.video.frame_count)]
                 pipeline_module.chroma_key = ui_module.chroma_key = forbid_key
-                window.keyed_passthrough_button.click()
+                window.build_button.click()
+                assert not p.is_passthrough and window.steps.currentIndex() == 3
+                state["phase"] = "choose"
+            elif phase == "choose":
+                assert all(b.visibleRegion().contains(b.rect()) for b in (window.sprite_direct_button, window.sprite_continue_button))
+                window.grab().save(str(output / "sprite-keyed-choice.png"))
+                window.sprite_direct_button.click()
                 state["phase"] = "native"
             elif phase == "native":
                 assert window.built and p.is_keyed_passthrough and not p.root_keyframes
@@ -128,10 +134,11 @@ def start_keyed_smoke(app, window, project_path, output=None):
             elif phase == "reopened":
                 if not window.built:
                     return
-                assert p.is_keyed_passthrough and window.steps.currentIndex() == 5
+                assert p.is_keyed_passthrough and window.steps.currentIndex() == 3
                 # Save-as copies files; capture timestamps at the new cache location.
                 state["keyed_times"] = [frame_path(window.cache_dir / "keyed_frames", i).stat().st_mtime_ns for i in range(p.video.frame_count)]
                 window.steps.setCurrentIndex(2)
+                window.editor.alignment()
                 assert window.anchor_resume_button.isVisible() and window.viewer.interaction is None
                 window.anchor_resume_button.click()
                 p.root_keyframes = state["roots"]
@@ -142,7 +149,7 @@ def start_keyed_smoke(app, window, project_path, output=None):
                 assert all(f.tracking_method != "passthrough" for f in p.tracking_results)
                 assert state["keyed_times"] == [frame_path(window.cache_dir / "keyed_frames", i).stat().st_mtime_ns for i in range(p.video.frame_count)]
                 report = dict(status="passed", frames=p.video.frame_count, fps=p.video.fps, sheet_size=state["sheet_size"],
-                    native_keyed_pixel_equal=True, preview_export_equal=True, full_processing_resumed_without_key=True,
+                    sprite_entry_without_root=True, native_keyed_pixel_equal=True, preview_export_equal=True, full_processing_resumed_without_key=True,
                     project_mode_restored=True, dpr=window.devicePixelRatioF())
                 (output / "validation.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
                 log.info("Keyed passthrough smoke passed: %s output=%s", report, output)

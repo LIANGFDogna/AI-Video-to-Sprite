@@ -5,7 +5,7 @@ import os
 from PySide6.QtCore import QDir, QModelIndex, QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QIcon, QPainter, QPalette, QPixmap
 from PySide6.QtWidgets import (QComboBox, QDialog, QFileIconProvider, QFileSystemModel,
-    QHBoxLayout, QInputDialog, QLabel, QLineEdit, QPushButton, QTreeView, QVBoxLayout)
+    QHBoxLayout, QInputDialog, QLabel, QLineEdit, QPushButton, QTreeView, QVBoxLayout, QListWidget, QListWidgetItem)
 
 from app.i18n import t, translate_error
 from app.ui.theme import STYLE
@@ -107,7 +107,15 @@ class FolderPickerDialog(QDialog):
         self.tree.setTextElideMode(Qt.TextElideMode.ElideMiddle)
         self.tree.doubleClicked.connect(lambda index: self.navigate(self.model.filePath(index)))
         self.tree.selectionModel().currentChanged.connect(self._selection_changed)
-        outer.addWidget(self.tree, 1)
+        self.sidebar=QListWidget()
+        self.sidebar.setMinimumWidth(125);self.sidebar.setMaximumWidth(200)
+        from app.ui.dialogs import path_context
+        memory,project=path_context(parent)
+        for label,folder in memory.shortcuts(project):
+            item=QListWidgetItem(t(label));item.setData(Qt.ItemDataRole.UserRole,str(folder));item.setToolTip(str(folder));self.sidebar.addItem(item)
+        computer=QListWidgetItem(t("Computer"));computer.setData(Qt.ItemDataRole.UserRole,None);self.sidebar.addItem(computer)
+        self.sidebar.itemClicked.connect(self._shortcut_selected)
+        content=QHBoxLayout();content.addWidget(self.sidebar);content.addWidget(self.tree,1);outer.addLayout(content,1)
         self.current_label = QLabel()
         self.current_label.setMinimumWidth(0)
         self.current_label.setWordWrap(True)
@@ -127,8 +135,19 @@ class FolderPickerDialog(QDialog):
         self.hint_timer = QTimer(self)
         self.hint_timer.setSingleShot(True)
         self.hint_timer.timeout.connect(self._start_hint)
-        candidate = Path(path).expanduser() if path else Path.home()
-        self.navigate(candidate if candidate.is_dir() else Path.home())
+        from app.utils.path_memory import valid_directory
+        candidate=valid_directory(path,True) or memory.initial('generic_folder',project)
+        self.navigate(candidate)
+
+    def _shortcut_selected(self,item):
+        value=item.data(Qt.ItemDataRole.UserRole)
+        if value:self.navigate(value)
+        else:
+            self.tree.setRootIndex(QModelIndex());self.current_directory=None
+            self.tree.clearSelection();self.tree.setCurrentIndex(QModelIndex())
+            self.hint_timer.stop();self.hint_pending=False;self.hint_revision+=1;self.hint.clear()
+            self.path_edit.clear();self.current_label.setText(t("Computer"));self.current_label.setToolTip("")
+            self.select_button.setEnabled(False);self.new_folder_button.setEnabled(False);self.up_button.setEnabled(False)
 
     def _button(self, label, callback):
         button = QPushButton(t(label))
@@ -142,7 +161,12 @@ class FolderPickerDialog(QDialog):
 
     def navigate(self, path, record=True):
         try:
-            destination = Path(path).expanduser().resolve()
+            if not str(path).strip():raise ValueError("Folder path does not exist")
+            destination=Path(path).expanduser()
+            if not destination.is_absolute():
+                if self.current_directory is None:raise ValueError("Folder path does not exist")
+                destination=self.current_directory/destination
+            destination=destination.resolve()
             if not destination.is_dir():
                 raise ValueError("Folder path does not exist")
             # Detect inaccessible directories before replacing the current location.
@@ -152,6 +176,7 @@ class FolderPickerDialog(QDialog):
             self.show_error(translate_error(str(error)))
             return False
         self.current_directory = destination
+        self.new_folder_button.setEnabled(True)
         self.path_edit.setText(str(destination))
         self.path_edit.setToolTip(str(destination))
         self.path_edit.setCursorPosition(len(str(destination)))
@@ -192,6 +217,7 @@ class FolderPickerDialog(QDialog):
         folder = self.selection_path()
         if folder is None:
             return
+        self.select_button.setEnabled(True)
         name = folder.name or str(folder)
         shown = name if len(name) <= 90 else name[:42] + "…" + name[-42:]
         self.current_label.setText(t("Current selection: {folder}", folder=shown))
@@ -207,6 +233,7 @@ class FolderPickerDialog(QDialog):
             return
         folder, revision = self.selection_path(), self.hint_revision
         self.hint_pending = False
+        if folder is None:return
         def operation(progress, cancel):
             from app.core.frame_sequence import IMAGE_EXTENSIONS, natural_key
             from app.utils.ffmpeg import check_cancel
@@ -247,6 +274,7 @@ class FolderPickerDialog(QDialog):
             self.hint_timer.start(0)
 
     def new_folder(self):
+        if self.current_directory is None:return
         from app.core.project_workspace import validate_project_name
         name, ok = QInputDialog.getText(self, t("New folder"), t("Folder name"))
         if not ok:

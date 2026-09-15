@@ -99,9 +99,9 @@ def process_motion(frames, settings: MotionSettings, fps):
     return frames
 
 
-def review_warnings(frames, loop=True):
+def review_warnings(frames, loop=True, root_tracked=True):
     for i, f in enumerate(frames):
-        if f.tracking_confidence < .35 and "Low Confidence" not in f.warnings:
+        if root_tracked and f.tracking_method != "empty" and f.tracking_confidence < .35 and "Low Confidence" not in f.warnings:
             f.warnings.append("Low Confidence")
         if i and f.cell_bbox and frames[i-1].cell_bbox:
             a, b = f.cell_bbox, frames[i-1].cell_bbox
@@ -113,11 +113,11 @@ def review_warnings(frames, loop=True):
             dims = np.maximum(1, [a[2]-a[0], a[3]-a[1]])
             if np.max(np.maximum(dims/old_dims, old_dims/dims)) > 1.4:
                 f.warnings.append("Size Jump")
-        if i and np.linalg.norm(np.array(f.cell_root)-frames[i-1].cell_root) > 8:
+        if root_tracked and i and f.tracking_method != "empty" and frames[i-1].tracking_method != "empty" and np.linalg.norm(np.array(f.cell_root)-frames[i-1].cell_root) > 8:
             f.warnings.append("Root Jump")
     if loop and len(frames) > 1:
         first, last = frames[0], frames[-1]
-        seam = np.linalg.norm(np.array(first.cell_root)-last.cell_root) > 3
+        seam = root_tracked and np.linalg.norm(np.array(first.cell_root)-last.cell_root) > 3
         if first.cell_bbox and last.cell_bbox:
             seam |= np.max(np.abs(np.array(first.cell_bbox)-last.cell_bbox)) > 8
         if seam:

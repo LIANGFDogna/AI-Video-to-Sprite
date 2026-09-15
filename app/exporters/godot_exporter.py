@@ -23,11 +23,17 @@ def write_metadata(project: Project, path: Path):
         "root_tracked": not p.is_passthrough,
         "fps": p.video.fps,
         "fps_rational": p.video.fps_rational,
-        "frame_count": p.video.frame_count,
+        "frame_count": p.output_count,
+        "source_frame_count": p.video.frame_count,
+        "timeline_edited": p.timeline_edit.enabled,
+        "character_reference": asdict(p.character_reference) if p.character_reference else None,
+        "animation_transform": asdict(p.animation_transform),
+        "animation_offset_coordinate_space": "project_canvas_pixels",
+        "duration": sum(f["duration"] for f in p.final_timing) if p.has_final_edits else p.video.duration,
         "cell_width": layout.width,
         "cell_height": layout.height,
         "columns": p.export_settings.columns,
-        "rows": math.ceil(p.video.frame_count / p.export_settings.columns),
+        "rows": math.ceil(p.output_count / p.export_settings.columns),
         "root_x": None if p.is_passthrough else layout.target_root[0],
         "root_y": None if p.is_passthrough else layout.target_root[1],
         "ground_baseline": None if p.is_passthrough else layout.ground_baseline,
@@ -39,15 +45,19 @@ def write_metadata(project: Project, path: Path):
         "canvas_scale": layout.normalize_scale,
         "motion_policy": {"x": "PASSTHROUGH", "y": "PASSTHROUGH"} if p.is_passthrough else {"x": "EXTRACT", "y": "EXTRACT"} if p.character_profile else {"x": p.motion_settings.x_policy, "y": p.motion_settings.y_policy},
         "root_motion_file": "root_motion.json",
+        "root_motion_time_basis": "original_source_frames",
         "loop": p.export_settings.loop,
         "texture": "sprite_sheet.png",
         "coordinate_system": "Target pixels; bbox [left,top,right,bottom). root/target_root and ground describe the final cell. raw_root/filtered_root are normalized pre-correction trajectories. No world position animation is authored.",
         "frames": [],
     }
-    for f in p.tracking_results:
+    for f in p.output_frames:
+        timing = p.final_timing[f.index] if p.has_final_edits else {"source_index": f.index, "start": f.index/(p.video.fps or 24), "duration": 1/(p.video.fps or 24)}
+        source_index = timing['source_index']
         data["frames"].append({
-            "index": f.index, "source_frame": f.index,
-            "source_filename": p.sequence_files[f.index] if p.input_mode == "frame_sequence" else f"frame_{f.index:06d}.png",
+            "index": f.index, "source_frame": source_index, "time": timing["start"], "duration": timing["duration"],
+            "layers": timing.get("layers", []),
+            "source_filename": (p.sequence_files[source_index] if p.input_mode == "frame_sequence" else f"frame_{source_index:06d}.png") if source_index >= 0 else None,
             "bbox": f.cell_bbox,
             "root": f.cell_root,
             "ground": f.cell_ground,

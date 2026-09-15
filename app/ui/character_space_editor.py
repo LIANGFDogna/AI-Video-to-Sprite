@@ -145,6 +145,7 @@ class CharacterSpaceEditor(QDialog):
         footer.addWidget(self.save_button)
         close = QPushButton(t("Cancel"))
         close.clicked.connect(self.close)
+        for button in (self.pick_button,self.save_button,close):button.setAutoDefault(False)
         footer.addWidget(close)
         layout.addLayout(footer)
         self.update_profile()

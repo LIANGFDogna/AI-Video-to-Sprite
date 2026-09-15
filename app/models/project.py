@@ -11,10 +11,12 @@ from pathlib import Path
 
 from app.models.frame_data import CellLayout, FrameData
 from app.models.character_profile import CharacterProfile
+from app.models.timeline_edit import TimelineEdit
+from app.models.character_reference import CharacterReference, AnimationTransform
 
 ALIGNMENT_MODES = ("ROOT XY LOCK", "GROUND LOCK", "ROOT X + GROUND Y")
 PROJECT_FIELDS = ("project_name", "project_version", "project_type", "default_fps", "source_canvas", "output_canvas",
-                  "project_canvas_width", "project_canvas_height", "canvas_fit_mode")
+                  "project_canvas_width", "project_canvas_height", "canvas_fit_mode", "character_reference")
 
 
 @dataclass
@@ -130,6 +132,24 @@ class Project:
     project_canvas_height: int = 0
     canvas_fit_mode: str = "none"
     original_size: tuple[int, int] = (0, 0)
+    character_reference: CharacterReference | None = None
+    animation_transform: AnimationTransform = field(default_factory=AnimationTransform)
+    timeline_edit: TimelineEdit = field(default_factory=TimelineEdit)
+    final_frames: list[FrameData] = field(default_factory=list)
+    final_timing: list[dict] = field(default_factory=list)
+
+    @property
+    def has_final_edits(self):
+        return self.timeline_edit.enabled or self.animation_transform.active
+
+    @property
+    def output_frames(self):
+        return self.final_frames if self.has_final_edits else self.tracking_results
+
+    @property
+    def output_count(self):
+        return len(self.final_timing) if self.has_final_edits else self.video.frame_count
+
 
     @property
     def project_canvas(self):
@@ -174,6 +194,9 @@ class Project:
             self.video.duration = self.video.frame_count / self.sequence_fps
 
     def validate(self) -> None:
+        self.timeline_edit.validate(self.video.frame_count)
+        AnimationTransform.from_dict(self.animation_transform)
+        if self.character_reference:self.character_reference.validate()
         if self.canvas_fit_mode not in ("none", "center_crop_or_pad"):
             raise ValueError("Invalid project canvas fit mode")
         if not self.project_canvas and (self.project_canvas_width, self.project_canvas_height) != (0, 0):
@@ -202,7 +225,7 @@ class Project:
         for key in (self.animation_id, *self.animations):
             if key != "default" and (len(key) != 32 or any(c not in "0123456789abcdef" for c in key)):
                 raise ValueError("Invalid animation identifier")
-        if any("character_profile" in data or "animations" in data for data in self.animations.values()):
+        if any("character_profile" in data or "character_reference" in data or "animations" in data for data in self.animations.values()):
             raise ValueError("Character Profile must be stored once per project")
         if self.schema_version != 1:
             raise ValueError("Unsupported project schema version")
@@ -306,6 +329,10 @@ class Project:
             data[name] = model(**data.get(name, {}))
         data["root_keyframes"] = {int(k): tuple(v) for k, v in data.get("root_keyframes", {}).items()}
         data["tracking_results"] = [FrameData(**v) for v in data.get("tracking_results", [])]
+        data["final_frames"] = [FrameData(**v) for v in data.get("final_frames", [])]
+        data["timeline_edit"] = TimelineEdit.from_dict(data.get("timeline_edit"))
+        data["character_reference"] = CharacterReference.from_dict(data.get("character_reference"))
+        data["animation_transform"] = AnimationTransform.from_dict(data.get("animation_transform"))
         data["layout"] = CellLayout(**data["layout"]) if data.get("layout") else None
         data["character_profile"] = CharacterProfile.from_dict(data["character_profile"]) if data.get("character_profile") else None
         project = cls(**data)
@@ -339,12 +366,15 @@ class Project:
         if self.character_profile:
             result.sprite_cell.canvas_mode = "normalize_source"
             result.sprite_cell.target_width, result.sprite_cell.target_height = self.character_profile.canvas_size
+        if self.character_reference:
+            result.set_processing_mode("keyed_passthrough")
         return result
 
     def import_frame_sequence(self, folder: Path, fps=None, passthrough=True, size_policy="strict"):
         result = self.import_animation(folder)
         result.source_video = ""
         result.input_mode = "frame_sequence"
+        result.processing_mode = "full"
         result.sequence_folder = str(folder.resolve())
         result.sequence_fps = float(self.default_fps if fps is None else fps)
         result.sequence_size_policy = size_policy

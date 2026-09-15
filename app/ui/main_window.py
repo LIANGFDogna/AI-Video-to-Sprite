@@ -42,12 +42,19 @@ from app.models.frame_data import FrameData
 from app.models.project import ALIGNMENT_MODES, Project
 from app.ui.anchor_editor import AnchorEditor
 from app.ui.controls import ParameterPanel
+from app.ui.frame_editor import FrameEditor
+from app.models.timeline_edit import EditHistory
+from app import __version__, __build__
+from app.models.character_reference import CharacterReference, AnimationTransform
+from app.core.character_reference import ReferenceSource
+from app.ui.character_reference_dialog import CharacterReferenceDialog
 from app.ui.sprite_preview import SpritePreview
 from app.ui.theme import STYLE
 from app.ui.timeline import Timeline
 from app.ui.worker import Worker
 from app.utils.cache import FrameCache
 from app.utils.paths import cache_directory, frame_path
+from app.utils.path_memory import PathMemoryService
 
 log = logging.getLogger("aivsprite.ui")
 
@@ -56,6 +63,8 @@ class MainWindow(QMainWindow):
     def __init__(self, log_path: Path, parent=None):
         super().__init__(parent)
         self.log_path = log_path
+        self.path_memory=PathMemoryService(manager().settings_path)
+        self.path_memory.work_root
         self.project = Project()
         self.project_file = None
         self.cache_dir = cache_directory(self.project.project_id)
@@ -65,6 +74,7 @@ class MainWindow(QMainWindow):
         self.preview_revision = 0
         self.preview_cache = FrameCache(64 * 1024 * 1024)
         self.current_frame = 0
+        self.edit_histories = {}
         self.dirty = False
         self.built = False
         self.keyed_ready = False
@@ -78,6 +88,7 @@ class MainWindow(QMainWindow):
         self.review_windows = []
         self.export_notices = []
         self.character_editor = None
+        self.reference_dialog = None
         self.sequence_dialog = None
         self.new_project_dialog = None
         self.setAcceptDrops(True)
@@ -108,9 +119,13 @@ class MainWindow(QMainWindow):
         self.import_sequence_button = self._button("Import Frame Sequence", self.choose_sequence)
         self.open_button = self._button("Open Project", self.open_project)
         self.save_button = self._button("Save Project", self.save_project)
-        self.export_button = self._button("Export", lambda: self.steps.setCurrentIndex(6), primary=True)
+        self.export_button = self._button("Export", lambda: self.steps.setCurrentIndex(4), primary=True)
         for button in (self.new_button, self.import_button, self.import_sequence_button, self.open_button, self.save_button, self.export_button):
             toolbar.addWidget(button)
+        self.undo_button = self._button("Undo", self.undo_edit)
+        self.redo_button = self._button("Redo", self.redo_edit)
+        toolbar.addWidget(self.undo_button)
+        toolbar.addWidget(self.redo_button)
         toolbar.addWidget(self._button("Diagnostics", self.show_diagnostics))
         self.language = QComboBox()
         self.language.addItem("简体中文", "zh_CN")
@@ -122,7 +137,7 @@ class MainWindow(QMainWindow):
         outer.addLayout(toolbar)
         self.steps = QTabBar()
         self.steps.setExpanding(True)
-        for text in ("1  Import", "2  Key", "3  Anchor", "4  Motion", "5  Align", "6  Sprite", "7  Export"):
+        for text in ("1  Import", "2  Key", "3  Edit", "4  Sprite", "5  Export"):
             self.steps.addTab(t(text))
         self.steps.currentChanged.connect(self._stage_changed)
         outer.addWidget(self.steps)
@@ -196,6 +211,7 @@ class MainWindow(QMainWindow):
         left_scroll.setWidget(left)
         left_scroll.setMinimumWidth(180)
         left_scroll.setMaximumWidth(250)
+        self.left_scroll = left_scroll
         self.splitter.addWidget(left_scroll)
         middle = QWidget()
         middle_layout = QVBoxLayout(middle)
@@ -211,7 +227,8 @@ class MainWindow(QMainWindow):
         view_toolbar.addWidget(self.zoom_label)
         view_toolbar.addWidget(self._button("Fit", lambda: self.active_view().fit_image()))
         view_toolbar.addWidget(self._button("100%", lambda: self.active_view().actual_size()))
-        middle_layout.addLayout(view_toolbar)
+        self.view_toolbar_widget=QWidget();self.view_toolbar_widget.setLayout(view_toolbar)
+        middle_layout.addWidget(self.view_toolbar_widget)
         self.views = QStackedWidget()
         self.viewer = AnchorEditor()
         self.sprite_view = SpritePreview()
@@ -238,6 +255,10 @@ class MainWindow(QMainWindow):
         self.panels.setMaximumWidth(395)
         self.parameter_panels = []
         self._create_panels()
+        alignment_panels = [self.panels.widget(i).takeWidget() for i in (2, 3, 4)]
+        self.views.removeWidget(self.motion_editor)
+        self.editor = FrameEditor(self, alignment_panels, self.motion_editor)
+        self.views.addWidget(self.editor)
         self.splitter.addWidget(self.panels)
         self.splitter.setSizes([190, 880, 330])
         self.splitter.setStretchFactor(1, 1)
@@ -260,7 +281,9 @@ class MainWindow(QMainWindow):
         self.build_button = self._button("Analyze / Build", self.build_sprites, primary=True)
         playback.addWidget(self.process_button)
         playback.addWidget(self.build_button)
-        outer.addLayout(playback)
+        self.playback_widget = QWidget()
+        self.playback_widget.setLayout(playback)
+        outer.addWidget(self.playback_widget)
         self.timeline = Timeline()
         self.timeline.frame_selected.connect(self.select_frame)
         outer.addWidget(self.timeline)
@@ -277,14 +300,126 @@ class MainWindow(QMainWindow):
         status.addWidget(self.cancel_button)
         outer.addLayout(status)
         self.setCentralWidget(central)
-        for sequence, callback in ((QKeySequence.StandardKey.New, self.new_project), (QKeySequence.StandardKey.Open, self.open_project), (QKeySequence.StandardKey.Save, self.save_project)):
+        for sequence, callback in (("Ctrl+Z",self.undo_edit),("Ctrl+Shift+Z",self.redo_edit),("Ctrl+Y",self.redo_edit)):
+            action = QAction(self);action.setShortcut(QKeySequence(sequence));action.triggered.connect(callback);self.addAction(action)
+        self.file_shortcuts=[]
+        for sequence, button in ((QKeySequence.StandardKey.New,self.new_button),(QKeySequence.StandardKey.Open,self.open_button),(QKeySequence.StandardKey.Save,self.save_button),(QKeySequence.StandardKey.SaveAs,self.save_as_button)):
             action = QAction(self)
             action.setShortcut(QKeySequence(sequence))
-            action.triggered.connect(callback)
-            self.addAction(action)
+            action.triggered.connect(button.click)
+            self.addAction(action);self.file_shortcuts.append((action,button))
+
+    @property
+    def viewer(self):
+        if hasattr(self, 'editor') and self.steps.currentIndex() == 2:
+            return self.editor.alignment_view
+        return self.source_viewer
+
+    @viewer.setter
+    def viewer(self, value):
+        self.source_viewer = value
+
+    def _history(self):
+        key = (self.project.project_id, self.project.animation_id)
+        return self.edit_histories.setdefault(key, EditHistory())
+
+    def _edit_snapshot(self):
+        p = asdict(self.project)
+        keys = ('timeline_edit','root_keyframes','motion_settings','tracking_settings','alignment_mode','sprite_cell',
+                'scale','character_profile','processing_mode','full_processing_canvas_mode','passthrough_alignment',
+                'chroma_key_settings','sequence_fps','export_settings','character_reference','animation_transform')
+        return {k:p[k] for k in keys}
+
+    def _restore_edit(self, state):
+        self.editor.pause_preview()
+        data = asdict(self.project);data.update(state)
+        self.project = Project.from_dict(data)
+        self.dirty, self.built = True, False
+        self._invalidate_reviews()
+        self._sync_controls();self._refresh_timeline()
+        self._refresh_editor()
+        self.request_preview()
+
+    def undo_edit(self):
+        if self.interaction_busy:return
+        history=self._history();state=history.undo()
+        if state is not None:
+            if 'character_reference' not in history.last_changed_fields:state['character_reference']=asdict(self.project.character_reference) if self.project.character_reference else None
+            self._restore_edit(state)
+
+    def redo_edit(self):
+        if self.interaction_busy:return
+        history=self._history();state=history.redo()
+        if state is not None:
+            if 'character_reference' not in history.last_changed_fields:state['character_reference']=asdict(self.project.character_reference) if self.project.character_reference else None
+            self._restore_edit(state)
+
+    def _refresh_editor(self):
+        p = self.project
+        if p.source_path and p.layout and p.has_final_edits:
+            pipe = Pipeline(p,self.cache_dir)
+            if pipe._manifest('align').get('signature') == pipe.align_signature():
+                self.editor.bind()
+                return
+        self.editor.provider = None
+        self.editor.refresh()
+
+    def apply_editor_command(self, operation, label):
+        if self.worker or not self.project.timeline_edit.enabled:return
+        before = self._edit_snapshot()
+        self.editor.pause_preview()
+        try:
+            created = operation(self.project.timeline_edit)
+            self.project.timeline_edit.validate(self.project.video.frame_count)
+        except Exception as error:
+            self._restore_edit(before)
+            self.editor.notice.setText(translate_error(str(error)))
+            return
+        self._history().record(before,self._edit_snapshot(),label)
+        if isinstance(created,list):self.editor.selected_ids = created
+        self.dirty,self.built = True,False
+        self._invalidate_reviews();self._update_state()
+        self.editor.bind()
+
+    def open_editor(self):
+        self.steps.setCurrentIndex(2)
+        self.editor.inspector.setCurrentIndex(0)
+        if not self.worker:self.prepare_editor()
+
+    def edit_keyed_frames(self):
+        if not self.keyed_ready or self.worker:return
+        if self.project.input_mode == 'video' and not self.project.is_passthrough:
+            self.project.set_processing_mode('keyed_passthrough')
+        self.open_editor()
+
+    def prepare_editor(self):
+        if self.steps.currentIndex() != 2:return
+        if self.worker or not self.project.video.frame_count:return
+        if not self.keyed_ready:
+            self.editor.notice.setText(t('Process all keyed frames before editing.'))
+            return
+        if not self.project.is_passthrough and 0 not in self.project.root_keyframes:
+            self.editor.alignment()
+            self.editor.notice.setText(t('Set the first Root for alignment, or use Edit Keyed Frames on the Key page.'))
+            return
+        self.editor.pause_preview()
+        p = copy.deepcopy(self.project)
+        p.timeline_edit.initialize(p.video.frame_count,p.video.fps or 24)
+        directory = self.cache_dir
+        def operation(progress,cancel):
+            Pipeline(p,directory,progress,cancel).ensure_aligned()
+            return p
+        def success(project):
+            self.project=project;self.dirty=True;self.built=False
+            self._sync_controls();self.editor.bind();self._refresh_timeline()
+            self.status.setText(t('Editor ready'))
+            self.views.setCurrentWidget(self.editor)
+        self._run(operation,success,t('Preparing animation editor'))
 
     def _button(self, text, callback, primary=False):
         button = QPushButton(t(text))
+        button.setAutoDefault(False)
+        button.setToolTip(t(text))
         if primary:
             button.setObjectName("primary")
         button.clicked.connect(callback)
@@ -304,6 +439,8 @@ class MainWindow(QMainWindow):
         self._add_panel(p)
         p = ParameterPanel("Chroma key", "Adjust the matte, then Extract / Process to create full-resolution transparent PNG frames.")
         self.color_button = p.button("color", "Green Color")
+        self.edit_keyed_button = p.button("edit_keyed", "Edit Keyed Frames", True)
+        p.layout.insertWidget(2, self.edit_keyed_button)
         self.keyed_continue_button = p.button("full_processing", "Continue Root / Motion Processing")
         self.keyed_passthrough_button = p.button("keyed_passthrough", "Build Sprites Directly", True)
         p.layout.insertWidget(2, self.keyed_continue_button)
@@ -362,6 +499,11 @@ class MainWindow(QMainWindow):
         self.sprite_resume_button = p.button("full_processing", "Enable Root / Motion / Align")
         p.layout.insertWidget(2, self.keyed_passthrough_note)
         p.layout.insertWidget(3, self.sprite_resume_button)
+        self.sprite_keyed_choice_note = p.note("RGBA frames are ready. Build sprites directly to preserve positions, or continue Root / Motion processing for alignment.")
+        self.sprite_direct_button = p.button("keyed_passthrough", "Build Sprites Directly", True)
+        self.sprite_continue_button = p.button("full_processing", "Continue Root / Motion Processing")
+        for position, widget in enumerate((self.sprite_keyed_choice_note, self.sprite_direct_button, self.sprite_continue_button), 4):
+            p.layout.insertWidget(position, widget)
         self.passthrough_resolution = QComboBox()
         for label, value in (("Native Resolution", "native"), ("1536×1536", 1536), ("1024×1024", 1024),
                              ("768×768", 768), ("512×512", 512), ("Custom", "custom")):
@@ -384,6 +526,7 @@ class MainWindow(QMainWindow):
         lock.setToolTip(t("This version always uses one shared scale for all frames."))
         p.integer("export_settings.columns", "Columns (rows are automatic)", 1, 256)
         p.button("build", "Analyze / Build Sheet", True)
+        p.button("edit", "Edit Animation")
         p.button("preview", "Preview Animation")
         self.cell_note = p.note("Build to calculate cell dimensions and clipping.")
         self._add_panel(p)
@@ -396,6 +539,7 @@ class MainWindow(QMainWindow):
         p.button("export_frames", "Export Individual Frames")
         self.rgba_export_button = p.button("export_rgba", "Export Source-size RGBA Frames")
         p.button("save", "Save Project")
+        self.save_as_button=p.button("save_as", "Save Project As")
         p.note("Choose an output parent folder. Each export creates a new named folder. Godot JSON records source indices, cell regions, roots, bounds and tracking confidence.\n\nVFR input retains all frames; animation playback uses the source average FPS.")
         self._add_panel(p)
 
@@ -411,19 +555,31 @@ class MainWindow(QMainWindow):
         self.parameter_panels.append(panel)
 
     def _action(self, name):
-        actions = {"import": self.choose_video, "open": self.open_project, "save": self.save_project,
+        actions = {"import": self.choose_video, "open": self.open_project, "save": self.save_project, "save_as": self.save_project_as,
             "color": self.choose_color, "eyedropper": lambda: self._arm("color"), "root": lambda: self._arm("root"),
             "delete_root": self.delete_root, "process": self.process_key, "build": self.build_sprites,
             "export_all": lambda: self.choose_export("all", True), "export_sheet": lambda: self.choose_export("sheet"),
             "export_frames": lambda: self.choose_export("frames"), "export_rgba": lambda: self.choose_export("rgba")}
         actions.update(preview=self.open_animation_preview, normalize_preset=self._normalize_preset,
             keyed_passthrough=self.start_keyed_passthrough, full_processing=self.enable_full_processing,
-            import_sequence=self.choose_sequence,
+            import_sequence=self.choose_sequence, edit=self.open_editor, edit_keyed=self.edit_keyed_frames,
             character_space=self.open_character_space,
             ground_roi=lambda: self._arm_roi("ground_roi"), body_roi=lambda: self._arm_roi("body_roi"),
             clear_ground_roi=lambda: self._clear_roi("ground_roi"), clear_body_roi=lambda: self._clear_roi("body_roi"))
-        if not self.worker and not self.sequence_dialog and not self.new_project_dialog:
+        if not self.interaction_busy:
             actions[name]()
+
+    @property
+    def interaction_busy(self):
+        return any((self.worker,self.character_editor,self.reference_dialog,self.sequence_dialog,self.new_project_dialog))
+
+    def _remember_path(self,purpose,path,file=False):
+        if not self.path_memory.remember(purpose,path,file=file) and self.path_memory.last_error:
+            QMessageBox.warning(self,"Path history",t("The operation succeeded, but path history could not be saved. Check Diagnostics."))
+
+    @staticmethod
+    def export_purpose(kind,godot=False):
+        return 'project_export' if godot else {'sheet':'sprite_sheet_export','frames':'frame_export','rgba':'png_export','all':'sprite_sheet_export'}[kind]
 
     def _get_setting(self, key):
         obj = self.project
@@ -436,6 +592,59 @@ class MainWindow(QMainWindow):
         if key == "tracking_settings.roi_size" and obj == 0:
             return "Auto"
         return obj
+
+    def open_character_reference(self):
+        if self.reference_dialog:self.reference_dialog.raise_();return
+        if self.worker or not self.project.video.frame_count:return
+        if not self.keyed_ready:
+            self.editor.notice.setText(t('Process all keyed frames before editing.'));return
+        p=self.project
+        ref=p.character_reference
+        if ref is None:
+            w,h=p.project_canvas or (p.video.width,p.video.height)
+            ref=CharacterReference(p.animation_id,0,w//2,min(h-1,round(h*.9)),w,h)
+        self.editor.pause_preview()
+        try:source=ReferenceSource(p,ref,self.cache_dir,self.project_file)
+        except (OSError,ValueError,KeyError) as error:
+            self.editor.notice.setText(t("Idle reference unavailable: {error}",error=str(error)));return
+        def operation(progress,cancel):return source.get(cancel)
+        def success(pixels):
+            dialog=CharacterReferenceDialog(ref,pixels,source.project.export_settings.animation_name,
+                save_uses_passthrough=not p.character_reference and not p.is_passthrough,parent=self)
+            self.reference_dialog=dialog
+            dialog.saved.connect(self._save_character_reference)
+            dialog.finished.connect(self._reference_closed)
+            dialog.show();self._update_state()
+        self._run(operation,success,t('Loading Character Reference'))
+
+    def _save_character_reference(self,reference):
+        before=self._edit_snapshot();p=self.project;first=p.character_reference is None
+        p.character_reference=reference
+        # This explicit calibration workflow starts at stationary keyed pixels.
+        # Keep old tracking data/settings available for the separate legacy workflow.
+        if first and not p.is_passthrough:
+            canvas_mode=p.sprite_cell.canvas_mode
+            if p.input_mode=='video':p.set_processing_mode('keyed_passthrough')
+            else:p.passthrough_alignment=True;p.alignment_mode='passthrough';p.layout=None
+            p.sprite_cell.canvas_mode=canvas_mode if canvas_mode=='normalize_source' else 'source_canvas'
+            self.built=False
+        self._history().record(before,self._edit_snapshot(),'Character Reference')
+        self.dirty=True;self._invalidate_reviews();self._sync_controls();self._refresh_editor()
+        self.status.setText(t('Character Coordinate System: Locked'))
+
+    def _reference_closed(self,*args):
+        self.reference_dialog=None;self._update_state()
+        if self.project.character_reference and self.steps.currentIndex()==2 and not self.editor.provider:
+            QTimer.singleShot(0,self.prepare_editor)
+
+    def set_animation_offset(self,x,y,relative=False):
+        if self.worker or self.reference_dialog:return
+        before=self._edit_snapshot();value=self.project.animation_transform
+        self.editor.pause_preview()
+        self.project.animation_transform=AnimationTransform(value.offset_x+x if relative else x,value.offset_y+y if relative else y)
+        if before==self._edit_snapshot():return
+        self._history().record(before,self._edit_snapshot(),'Animation Offset')
+        self.dirty=True;self.built=False;self._invalidate_reviews();self._refresh_editor();self._update_state()
 
     def open_character_space(self):
         if self.project.is_passthrough:
@@ -503,29 +712,36 @@ class MainWindow(QMainWindow):
         animation_id = self.animation_selector.currentData()
         if self.worker or not animation_id or animation_id == self.project.animation_id:
             return
+        editing = self.steps.currentIndex() == 2
         p = self.project.select_animation(animation_id)
+        relocated=False
         if p.input_mode == "frame_sequence" and not Path(p.sequence_folder).is_dir():
-            folder = QFileDialog.getExistingDirectory(self, "Locate missing sequence folder")
+            folder = QFileDialog.getExistingDirectory(self, "Locate missing sequence folder",purpose="image_sequence_import")
             if not folder:
                 self._sync_animation_selector()
                 return
             p.sequence_folder = folder
+            relocated=True
         elif p.input_mode == "video" and not Path(p.source_video).is_file():
-            path, _ = QFileDialog.getOpenFileName(self, "Locate missing source video", "", "Video (*.mp4 *.mov *.avi *.mkv *.webm)")
+            path, _ = QFileDialog.getOpenFileName(self, "Locate missing source video", "", "Video (*.mp4 *.mov *.avi *.mkv *.webm)",purpose="video_import")
             if not path:
                 self._sync_animation_selector()
                 return
             p.source_video = path
+            relocated=True
         directory = cache_directory(p.project_id, self.project_file, p.animation_id)
         def operation(progress, cancel):
             return Pipeline(p, directory, progress, cancel).import_input(auto_color=False)
         def success(project):
             self._invalidate_reviews()
             self.project, self.cache_dir = project, directory
+            if relocated:self._remember_path("image_sequence_import" if project.input_mode=="frame_sequence" else "video_import",project.source_path,file=project.input_mode=="video")
             self.dirty, self.built, self.keyed_ready = True, False, False
             self._loaded()
-            self.steps.setCurrentIndex(5 if project.is_passthrough else 2)
-            if project.is_passthrough:
+            self.steps.setCurrentIndex(2 if editing else 3 if project.is_passthrough else 2)
+            if editing:
+                self._resume_after_work = self.prepare_editor
+            elif project.is_passthrough:
                 self._resume_after_work = self.build_sprites
         self._run(operation, success, t("Switching animation with the shared Character Profile"))
 
@@ -583,12 +799,17 @@ class MainWindow(QMainWindow):
         self.built, self.dirty = False, True
         self._sync_controls()
         self._refresh_timeline()
-        self.steps.setCurrentIndex(5)
+        self.steps.setCurrentIndex(3)
         self.build_sprites()
 
     def enable_full_processing(self):
-        if self.worker or self.project.input_mode != "video":
+        if self.worker:
             return
+        if self.project.input_mode == "frame_sequence" and self.project.is_passthrough:
+            self.project.passthrough_alignment = False
+            self.project.alignment_mode = ALIGNMENT_MODES[2]
+            self.project.sprite_cell.canvas_mode = "auto_bounds"
+            self.built, self.dirty = False, True
         if self.project.is_keyed_passthrough:
             self._invalidate_reviews()
             self.project.set_processing_mode("full")
@@ -596,6 +817,8 @@ class MainWindow(QMainWindow):
         self._sync_controls()
         self._refresh_timeline()
         self.steps.setCurrentIndex(2)
+        self.editor.alignment()
+        self.viewer.set_interaction("root")
         self.select_frame(0)
         self.request_preview()
 
@@ -608,6 +831,7 @@ class MainWindow(QMainWindow):
         if mode == "body_roi":
             self.select_frame(0)
         self.steps.setCurrentIndex(2)
+        self.editor.alignment()
         self.viewer.set_interaction(mode)
         self.context_hint.setText(t("Click two opposite corners around the lower body and feet; exclude weapons and effects.") if mode == "ground_roi" else t("Click two opposite corners around the textured torso; transparent pixels are always excluded."))
 
@@ -651,7 +875,7 @@ class MainWindow(QMainWindow):
             return None
         if self.worker or not self.built or not self.project.layout:
             self.context_hint.setText(t("Settings changed or sprites are not built. Analyze / Build before previewing."))
-            self.steps.setCurrentIndex(5)
+            self.steps.setCurrentIndex(3)
             return None
         try:
             provider = FinalFrameProvider(self.project, self.cache_dir)
@@ -694,9 +918,11 @@ class MainWindow(QMainWindow):
         self.rgba_export_button.setText(t("Export Project Canvas RGBA Frames") if p.project_canvas else t("Export Source-size RGBA Frames"))
         self.keyed_passthrough_note.setVisible(p.is_keyed_passthrough)
         self.sprite_resume_button.setVisible(p.is_keyed_passthrough)
-        self.anchor_resume_button.setVisible(p.is_keyed_passthrough)
-        for button in (self.keyed_continue_button, self.keyed_passthrough_button):
+        self.anchor_resume_button.setVisible(p.is_passthrough)
+        for button in (self.keyed_continue_button, self.keyed_passthrough_button, self.edit_keyed_button):
             button.setVisible(p.input_mode == "video" and self.keyed_ready)
+        for widget in (self.sprite_keyed_choice_note, self.sprite_direct_button, self.sprite_continue_button):
+            widget.setVisible(p.input_mode == "video" and self.keyed_ready and not passthrough)
         self.parameter_panels[5].form.setRowVisible(self.passthrough_resolution, passthrough)
         resolution = "native" if p.sprite_cell.canvas_mode != "normalize_source" else p.sprite_cell.target_width if p.sprite_cell.target_width == p.sprite_cell.target_height and p.sprite_cell.target_width in (512, 768, 1024, 1536) else "custom"
         self.passthrough_resolution.blockSignals(True)
@@ -716,15 +942,14 @@ class MainWindow(QMainWindow):
         for panel in self.parameter_panels:
             panel.set_values({key: self._get_setting(key) for key in panel.fields})
         self.parameter_panels[0].form.setRowVisible(self.parameter_panels[0].fields["sequence_fps"], p.input_mode == "frame_sequence")
-        for index, key in enumerate(("1  Import", "2  Key", "3  Anchor", "4  Motion", "5  Align", "6  Sprite", "7  Export")):
-            skipped = p.input_mode == "frame_sequence" and index == 1 or passthrough and index in (2, 3, 4)
-            completed = p.is_keyed_passthrough and (index == 0 or index == 1 and self.keyed_ready)
-            self.steps.setTabText(index, t("{step} · Skipped", step=t(key)) if skipped else t("{step} ✓", step=t(key)) if completed else t(key))
-            accessible = not skipped or p.is_keyed_passthrough and index == 2
-            self.steps.setTabEnabled(index, accessible)
-            self.parameter_panels[index].setEnabled(accessible)
-        for widget in (*self.parameter_panels[2].fields.values(), *self.parameter_panels[2].findChildren(QPushButton)):
-            widget.setEnabled(not p.is_keyed_passthrough or widget is self.anchor_resume_button)
+        for index, key in enumerate(("1  Import", "2  Key", "3  Edit", "4  Sprite", "5  Export")):
+            skipped = p.input_mode == "frame_sequence" and index == 1
+            self.steps.setTabText(index, t("{step} · Skipped", step=t(key)) if skipped else t(key))
+            self.steps.setTabEnabled(index, not skipped)
+        for index in (2, 3, 4):
+            self.parameter_panels[index].setEnabled(True)
+            for widget in (*self.parameter_panels[index].fields.values(), *self.parameter_panels[index].findChildren(QPushButton)):
+                widget.setEnabled(not passthrough or widget is self.anchor_resume_button)
         color = self.project.chroma_key_settings.green_color
         self.color_button.setText(t('Green Color   RGB {p0}, {p1}, {p2}', p0=color[0], p1=color[1], p2=color[2]))
         custom = self.project.sprite_cell.mode == "CUSTOM"
@@ -737,7 +962,7 @@ class MainWindow(QMainWindow):
             self.parameter_panels[5].fields[key].setEnabled(not normalize)
         for key in ("sprite_cell.mode", "sprite_cell.round_up", "sprite_cell.padding", "scale", "lock_character_scale", "sprite_cell.width", "sprite_cell.height"):
             self.parameter_panels[5].form.setRowVisible(self.parameter_panels[5].fields[key], not normalize)
-        self.parameter_panels[4].fields["alignment_mode"].setEnabled(not self.project.motion_settings.enabled)
+        self.parameter_panels[4].fields["alignment_mode"].setEnabled(not passthrough and not self.project.motion_settings.enabled)
         profile = self.project.character_profile if not passthrough else None
         self.normalize_preset_button.setEnabled(profile is None)
         self.normalize_preset_button.setVisible(not passthrough or (p.video.width, p.video.height) == (1536, 1536))
@@ -755,7 +980,7 @@ class MainWindow(QMainWindow):
             self.character_note.setText(t("Fixed Canonical Root ({x:.2f}, {y:.2f}); Y Axis X = {x:.2f}. Every animation uses In-Place alignment. Edit reference width in Character Space.", x=profile.canonical_root[0], y=profile.canonical_root[1]))
         else:
             for key in ("motion_settings.enabled", "motion_settings.x_policy", "motion_settings.y_policy"):
-                self.parameter_panels[3].fields[key].setEnabled(True)
+                self.parameter_panels[3].fields[key].setEnabled(not passthrough)
             self.character_note.setText(t("Import Idle to establish a project-level character reference."))
         mode = ALIGNMENT_MODES[0] if passthrough else self.project.alignment_mode
         self.alignment_note.setText(t("Axis motion policies are active. Configure X and Y on the Motion page. Legacy alignment applies only when motion policies are disabled.") if self.project.motion_settings.enabled else t({ALIGNMENT_MODES[0]: "Root X and Y stay fixed. Foot height can vary with the pose.",
@@ -810,17 +1035,24 @@ class MainWindow(QMainWindow):
 
     def _update_title(self):
         name = self.project_file.name if self.project_file else t("Untitled")
-        self.setWindowTitle(t('AI Video to Sprite — {p0}{p1}', p0=name, p1=' *' if self.dirty else ''))
+        self.setWindowTitle(t('AI Video to Sprite — {p0}{p1}', p0=name, p1=' *' if self.dirty else '') + f' · v{__version__} · {__build__}')
         display = self.project.project_name or (self.project_file.stem if self.project_file else t("Untitled"))
-        self.project_status.setText(t("Project: {name}", name=display) + "\n" + t("Character Profile: locked" if self.project.character_profile else "Character reference: not established"))
+        self.project_status.setText(t("Project: {name}", name=display) + "\n" + t("Character Coordinate System: Locked" if self.project.character_reference else "Character Profile: locked" if self.project.character_profile else "Character reference: not established"))
         self.start_page.update_project(self.project, self.project_file is not None)
 
     def _update_state(self):
-        busy = self.worker is not None or self.character_editor is not None or self.sequence_dialog is not None or self.new_project_dialog is not None
+        busy = self.worker is not None or self.character_editor is not None or self.reference_dialog is not None or self.sequence_dialog is not None or self.new_project_dialog is not None
         has_video = self.project.video.frame_count > 0
         for button in (self.new_button, self.import_button, self.import_sequence_button, self.open_button, self.save_button, self.export_button, *self.start_page.buttons):
             button.setEnabled(not busy)
         self.panels.setEnabled(not busy)
+        self.editor.setEnabled(not busy and has_video)
+        for index in (1,2,3,4,5):self.parameter_panels[index].setEnabled(not busy and has_video)
+        for button in self.parameter_panels[6].findChildren(QPushButton):
+            button.setEnabled(not busy and (has_video or button.property('uiAction') in ('save','save_as')))
+        history = self._history()
+        self.undo_button.setEnabled(not busy and history.index > 0)
+        self.redo_button.setEnabled(not busy and history.index < len(history.entries))
         self.process_button.setEnabled(has_video and not busy and self.project.input_mode != "frame_sequence")
         self.build_button.setEnabled(has_video and not busy)
         self.cancel_button.setEnabled(self.worker is not None)
@@ -828,24 +1060,38 @@ class MainWindow(QMainWindow):
         self.viewer.setEnabled(not busy)
         self.animation_selector.setEnabled(not busy)
         self.review_button.setEnabled((self.built or self.project.is_passthrough and has_video) and not busy)
+        self.export_button.setEnabled(has_video and not busy)
+        for action,button in self.file_shortcuts:action.setEnabled(button.isEnabled() and not busy)
         self._update_title()
 
     def active_view(self):
-        return self.views.currentWidget()
+        return self.editor if self.steps.currentIndex() == 2 else self.views.currentWidget()
 
     def _stage_changed(self, index):
-        self.panels.setCurrentIndex(index)
-        self.viewer.set_interaction(None)
-        self.views.setCurrentIndex(2 if index == 3 else (1 if index in (5, 6) and self.built else 0))
-        if not self.project.video.frame_count:
-            self.views.setCurrentWidget(self.start_page)
-        self.preview_mode.setEnabled(index != 3 and not (index in (5, 6) and self.built))
-        self.review_button.setVisible(index in (5, 6))
-        if index in (5, 6) and self.built:
-            self.view_label.setText(t("Sprite Sheet · overlays are preview only"))
-        if index == 2 and self.project.video.frame_count and not self.project.is_passthrough:
-            self.viewer.set_interaction("root")
+        if not hasattr(self, 'editor'): return
+        editing = index == 2
+        self.view_toolbar_widget.setVisible(not editing)
+        self.left_scroll.setVisible(not editing)
+        self.panels.setVisible(not editing)
+        self.timeline.setVisible(not editing)
+        self.playback_widget.setVisible(not editing)
+        self.context_hint.setVisible(not editing)
+        self.panels.setCurrentIndex({0:0, 1:1, 3:5, 4:6}.get(index,0))
+        self.source_viewer.set_interaction(None)
+        if editing:
+            self.views.setCurrentWidget(self.editor)
+            self.editor.bind()
+            if not self.worker and self.keyed_ready and (self.project.is_passthrough or 0 in self.project.root_keyframes):
+                QTimer.singleShot(0, self.prepare_editor)
+        else:
+            self.editor.pause_preview()
+            self.views.setCurrentWidget(self.sprite_view if index in (3,4) and self.built else self.source_viewer)
+            if not self.project.video.frame_count:self.views.setCurrentWidget(self.start_page)
+        self.preview_mode.setEnabled(not editing and not (index in (3,4) and self.built))
+        self.review_button.setVisible(index in (3,4))
+        if index in (3,4) and self.built:self.view_label.setText(t("Sprite Sheet · overlays are preview only"))
         self.request_preview()
+        self._update_state()
 
     def _overlay_changed(self, key, value):
         for view in (self.viewer, self.sprite_view):
@@ -893,22 +1139,22 @@ class MainWindow(QMainWindow):
         self.preview_timer.start(0 if self.play_timer.isActive() else 65)
 
     def _start_preview(self):
+        if self.steps.currentIndex() == 2 and self.editor.inspector.currentIndex() == 0:
+            self.editor.request_preview()
+            return
         if self.worker or not self.project.video.frame_count:
             return
         if self.preview_worker:
             return
-        if self.steps.currentIndex() == 3:
-            self.views.setCurrentIndex(2)
-            return
-        if self.steps.currentIndex() in (5, 6) and self.built:
-            self.views.setCurrentIndex(1)
+        if self.steps.currentIndex() in (3, 4) and self.built:
+            self.views.setCurrentWidget(self.sprite_view)
             self.view_label.setText(t("Sprite Sheet · overlays are preview only"))
             return
-        self.views.setCurrentIndex(0)
+        self.views.setCurrentWidget(self.editor if self.steps.currentIndex() == 2 else self.source_viewer)
         index, revision = self.current_frame, self.preview_revision
         settings = copy.deepcopy(self.project.chroma_key_settings)
         sequence = self.project.input_mode == "frame_sequence"
-        aligned = self.steps.currentIndex() == 4 and self.built
+        aligned = False  # Root interaction always uses the fitted source canvas.
         path = frame_path(self.cache_dir / ("aligned_frames" if aligned else "raw_frames"), index)
         if not path.exists():
             return
@@ -998,6 +1244,7 @@ class MainWindow(QMainWindow):
         self.play_timer.stop()
         self.play_button.setText(t("▶ Play"))
         self.steps.setCurrentIndex(2 if mode == "root" else 1)
+        if mode == "root": self.editor.alignment()
         self.viewer.set_interaction(mode)
         self.context_hint.setText(t("Click the stable body root. Coordinates are stored in source pixels.") if mode == "root" else t("Click the green-screen background to sample its RGB color."))
 
@@ -1098,21 +1345,21 @@ class MainWindow(QMainWindow):
             self.status.setText(t("Cancelling…"))
 
     def choose_video(self):
-        if self.worker or self.new_project_dialog:
+        if self.interaction_busy:
             return
-        path, _ = QFileDialog.getOpenFileName(self, "Import Video", "", "Video (*.mp4 *.mov *.avi *.mkv *.webm)")
+        path, _ = QFileDialog.getOpenFileName(self, "Import Video", "", "Video (*.mp4 *.mov *.avi *.mkv *.webm)",purpose="video_import")
         if path:
             self.import_video(Path(path))
 
     def choose_sequence(self):
-        if self.worker or self.character_editor or self.sequence_dialog or self.new_project_dialog:
+        if self.worker or self.character_editor or self.reference_dialog or self.sequence_dialog or self.new_project_dialog:
             return
-        folder = QFileDialog.getExistingDirectory(self, "Choose an animation frame folder (PNG recommended)", self._project_folder("sequences"), sequence=True)
+        folder = QFileDialog.getExistingDirectory(self, "Choose an animation frame folder (PNG recommended)", self._project_folder("sequences"), sequence=True,purpose="image_sequence_import")
         if folder:
             self.import_sequence(Path(folder))
 
     def import_sequence(self, folder):
-        if self.worker or self.character_editor or self.sequence_dialog or self.new_project_dialog:
+        if self.worker or self.character_editor or self.reference_dialog or self.sequence_dialog or self.new_project_dialog:
             return
         if not self._inherits_project() and not self._confirm_discard(lambda: self.import_sequence(folder)):
             return
@@ -1139,15 +1386,16 @@ class MainWindow(QMainWindow):
         def success(project):
             self._invalidate_reviews()
             self.project, self.cache_dir, self.project_file = project, directory, project_file
+            self._remember_path("image_sequence_import",project.sequence_folder)
             self.dirty, self.built, self.keyed_ready = True, False, True
             self._loaded()
-            self.steps.setCurrentIndex(5 if project.is_passthrough else 2)
+            self.steps.setCurrentIndex(3 if project.is_passthrough else 2)
             if project.is_passthrough:
                 self._resume_after_work = self.build_sprites
         self._run(lambda progress, cancel: Pipeline(p, directory, progress, cancel).import_sequence(), success, "Importing sequence RGBA frames")
 
     def import_video(self, path: Path):
-        if self.worker or self.character_editor or self.sequence_dialog or self.new_project_dialog:
+        if self.worker or self.character_editor or self.reference_dialog or self.sequence_dialog or self.new_project_dialog:
             return
         inherit = self._inherits_project()
         if not inherit and not self._confirm_discard(lambda: self.import_video(path)):
@@ -1162,6 +1410,7 @@ class MainWindow(QMainWindow):
         def success(project):
             self._invalidate_reviews()
             self.project, self.cache_dir, self.project_file = project, directory, project_file
+            self._remember_path("video_import",project.source_video,file=True)
             if not project.character_profile and (project.video.width, project.video.height) == (1536, 1536):
                 project.sprite_cell.canvas_mode = "normalize_source"
             self.dirty, self.built, self.keyed_ready = True, False, False
@@ -1179,7 +1428,7 @@ class MainWindow(QMainWindow):
         self.last_export = None
         if not self.built:
             self.summary.setText(t("No sprites built"))
-        self.views.setCurrentWidget(self.viewer if p.video.frame_count else self.start_page)
+        self.views.setCurrentWidget(self.source_viewer if p.video.frame_count else self.start_page)
         self.current_frame = 0
         self.preview_cache = FrameCache(64 * 1024 * 1024)
         self.viewer.clear_image()
@@ -1245,6 +1494,14 @@ class MainWindow(QMainWindow):
         if not self.project.video.frame_count or self.worker:
             return
         if not self.project.is_passthrough and 0 not in self.project.root_keyframes:
+            if self.project.input_mode == "video" and self.keyed_ready:
+                # A keyed video can build without a root. Keep both workflows
+                # accessible instead of forcing users back to the anchor page.
+                self._sync_controls()
+                self.steps.setCurrentIndex(3)
+                self.panels.widget(5).verticalScrollBar().setValue(0)
+                self.status.setText(t("RGBA frames are ready. Build sprites directly to preserve positions, or continue Root / Motion processing for alignment."))
+                return
             self.steps.setCurrentIndex(2)
             self.select_frame(0)
             self._arm("root")
@@ -1268,7 +1525,7 @@ class MainWindow(QMainWindow):
             self.sprite_view.set_image(pixels, factor)
             layout = self.project.layout
             warning_count = sum(bool(f.warnings) for f in self.project.tracking_results)
-            self.summary.setText(t('{p0} × {p1} px / cell\n{p2} frames · {p3} warnings', p0=layout.width, p1=layout.height, p2=self.project.video.frame_count, p3=warning_count))
+            self.summary.setText(t('{p0} × {p1} px / cell\n{p2} frames · {p3} warnings', p0=layout.width, p1=layout.height, p2=self.project.output_count, p3=warning_count))
             if self.project.is_passthrough:
                 text = t("Cell {width} × {height}\nPassthrough: tracking and alignment skipped.", width=layout.width, height=layout.height)
             elif layout.clipped_frames:
@@ -1280,7 +1537,7 @@ class MainWindow(QMainWindow):
             self.status.setText(t("Passthrough sprites ready · preview or export") if self.project.is_passthrough else t("Build complete · review confidence and warnings before export"))
             self._refresh_timeline()
             self.motion_editor.set_frames(self.project.tracking_results)
-            self.steps.setCurrentIndex(5)
+            self.steps.setCurrentIndex(3)
             self.views.setCurrentIndex(1)
             if callable(after):
                 self._resume_after_work = after
@@ -1305,17 +1562,22 @@ class MainWindow(QMainWindow):
         return str(self.project_file.parent / kind) if self.project_file else ""
 
     def new_project(self):
-        if self.worker or self.character_editor or self.sequence_dialog or self.new_project_dialog:
+        if self.worker or self.character_editor or self.reference_dialog or self.sequence_dialog or self.new_project_dialog:
             return
         if not self._confirm_discard(self.new_project):
             return
-        dialog = NewProjectDialog(self, str(self.project_file.parent.parent) if self.project_file else "")
+        dialog = NewProjectDialog(self)
         self.new_project_dialog = dialog
         dialog.project_created.connect(self._project_created)
+        dialog.project_open_requested.connect(self._open_existing_project)
         dialog.destroyed.connect(self._new_project_closed)
         self.play_timer.stop()
         dialog.show()
         self._update_state()
+
+    def _open_existing_project(self,path):
+        self.new_project_dialog=None
+        QTimer.singleShot(0,lambda:self.open_project(path,confirmed=True))
 
     def _new_project_closed(self):
         self.new_project_dialog = None
@@ -1331,14 +1593,17 @@ class MainWindow(QMainWindow):
         self.views.setCurrentWidget(self.start_page)
         self.status.setText(t("Project created"))
 
-    def save_project(self, path=None):
-        if self.worker or self.character_editor or self.sequence_dialog or self.new_project_dialog:
+    def save_project_as(self):
+        if not self.interaction_busy:self.save_project(force_dialog=True)
+
+    def save_project(self, path=None, *, force_dialog=False):
+        if self.worker or self.character_editor or self.reference_dialog or self.sequence_dialog or self.new_project_dialog:
             return
         if isinstance(path, bool):
             path = None
-        path = Path(path) if path else self.project_file
+        path = None if force_dialog else Path(path) if path else self.project_file
         if not path:
-            value, _ = QFileDialog.getSaveFileName(self, "Save Project", self.project.export_settings.animation_name + ".aivsprite", "AI Video to Sprite (*.aivsprite)")
+            value, _ = QFileDialog.getSaveFileName(self, "Save Project As" if force_dialog else "Save Project", (self.project_file.name if self.project_file else self.project.project_name or self.project.export_settings.animation_name)+("" if self.project_file else ".aivsprite"), "AI Video to Sprite (*.aivsprite)",purpose="project_save")
             if not value:
                 self._after_save = None
                 return
@@ -1354,7 +1619,7 @@ class MainWindow(QMainWindow):
             if source_cache.resolve() != target_cache.resolve():
                 for animation_id in (project.animation_id, *project.animations):
                     stage_directory = cache_directory(project.project_id, path, animation_id)
-                    for stage in ("raw", "key", "root", "motion", "source_align", "align", "sheet", "preview"):
+                    for stage in ("raw", "key", "root", "motion", "source_align", "align", "final", "sheet", "preview"):
                         (stage_directory / f"{stage}.json").unlink(missing_ok=True)
                 # Copy stage outputs first, manifests last. A cancellation never publishes partial stages.
                 files = list(source_cache.rglob("*"))
@@ -1366,6 +1631,7 @@ class MainWindow(QMainWindow):
             return path, active_target
         def success(result):
             self.project_file, self.cache_dir = result
+            self._remember_path("project_save",self.project_file,file=True)
             self.dirty = False
             self.status.setText(t('Saved {p0}', p0=self.project_file.name))
             self._update_title()
@@ -1373,13 +1639,13 @@ class MainWindow(QMainWindow):
             self._after_save = None
         self._run(operation, success, t("Saving project"))
 
-    def open_project(self, path=None):
-        if self.worker or self.character_editor or self.sequence_dialog or self.new_project_dialog or not self._confirm_discard(lambda: self.open_project(path)):
+    def open_project(self, path=None, *, confirmed=False):
+        if self.interaction_busy or not confirmed and not self._confirm_discard(lambda: self.open_project(path)):
             return
         if isinstance(path, bool):
             path = None
         if not path:
-            value, _ = QFileDialog.getOpenFileName(self, "Open Project", "", "AI Video to Sprite (*.aivsprite)")
+            value, _ = QFileDialog.getOpenFileName(self, "Open Project", "", "AI Video to Sprite (*.aivsprite)",purpose="project_open")
             if not value:
                 return
             path = Path(value)
@@ -1389,16 +1655,19 @@ class MainWindow(QMainWindow):
         except Exception as error:
             self._failed(str(error))
             return
+        relocated=False
         if project.input_mode == "frame_sequence" and not Path(project.sequence_folder).is_dir():
-            value = QFileDialog.getExistingDirectory(self, "Locate missing sequence folder")
+            value = QFileDialog.getExistingDirectory(self, "Locate missing sequence folder",purpose="image_sequence_import")
             if not value:
                 return
             project.sequence_folder = value
+            relocated=True
         elif project.source_video and not Path(project.source_video).is_file():
-            value, _ = QFileDialog.getOpenFileName(self, "Locate missing source video", "", "Video (*.mp4 *.mov *.avi *.mkv *.webm)")
+            value, _ = QFileDialog.getOpenFileName(self, "Locate missing source video", "", "Video (*.mp4 *.mov *.avi *.mkv *.webm)",purpose="video_import")
             if not value:
                 return
             project.source_video = value
+            relocated=True
         directory = cache_directory(project.project_id, path, project.animation_id)
         def operation(progress, cancel):
             if project.source_path:
@@ -1407,23 +1676,25 @@ class MainWindow(QMainWindow):
         def success(p):
             self._invalidate_reviews()
             self.project, self.project_file, self.cache_dir = p, path, directory
+            if relocated:self._remember_path("image_sequence_import" if p.input_mode=="frame_sequence" else "video_import",p.source_path,file=p.input_mode=="video")
+            self._remember_path("project_open",path,file=True)
             self.dirty, self.built, self.keyed_ready = False, False, p.input_mode == "frame_sequence"
             self._loaded()
-            self.steps.setCurrentIndex(0 if not p.source_path else 5 if p.is_passthrough else 2 if p.root_keyframes or p.input_mode == "frame_sequence" else 1)
+            self.steps.setCurrentIndex(0 if not p.source_path else 3 if p.is_passthrough else 2 if p.root_keyframes or p.input_mode == "frame_sequence" else 1)
             if p.is_passthrough:
                 self._resume_after_work = self.build_sprites
             self.status.setText(t("Project restored · manual roots retained; Analyze / Build reuses valid cache"))
         self._run(operation, success, t("Opening project / verifying source cache"))
 
     def choose_export(self, kind="all", godot=False):
-        if self.worker or not self.project.video.frame_count:
+        if self.interaction_busy or not self.project.video.frame_count:
             return
         if self.project.is_passthrough and kind != "rgba" and not self.built:
             self.build_sprites(after=lambda: self.choose_export(kind, godot))
             return
         if kind != "rgba" and not self.built:
             self.context_hint.setText(t("Settings changed or sprites are not built. Analyze / Build before exporting."))
-            self.steps.setCurrentIndex(5)
+            self.steps.setCurrentIndex(3)
             return
         allow_clipping = False
         if kind != "rgba" and self.project.layout.clipped_frames:
@@ -1433,7 +1704,8 @@ class MainWindow(QMainWindow):
             if answer != QMessageBox.StandardButton.Yes:
                 return
             allow_clipping = True
-        parent = QFileDialog.getExistingDirectory(self, "Choose export parent folder", self._project_folder("exports"))
+        title="Export Godot Bundle" if godot else {"all":"Export Sprite Bundle","sheet":"Export Sprite Sheet","frames":"Export PNG Sequence","rgba":"Export RGBA Frames"}[kind]
+        parent = QFileDialog.getExistingDirectory(self,title,self._project_folder("exports"),purpose=self.export_purpose(kind,godot))
         if not parent:
             return
         name = re.sub(r"[^\w.-]+", "_", self.project.export_settings.animation_name, flags=re.UNICODE).strip(" ._")[:60] or "animation"
@@ -1451,6 +1723,7 @@ class MainWindow(QMainWindow):
             return export_images(Pipeline(p, directory, progress, cancel), Path(destination), kind, godot, allow_clipping)
         def success(result):
             self.last_export = result
+            self._remember_path(self.export_purpose(kind,godot),Path(result).parent)
             self.status.setText(t('Export complete: {p0}', p0=result))
             self.context_hint.setText(t('Exported to {p0}', p0=result))
             if kind != "rgba":
@@ -1505,6 +1778,7 @@ class MainWindow(QMainWindow):
                 break
 
     def closeEvent(self, event: QCloseEvent):
+        self.editor.pause_preview()
         if self.worker:
             answer = QMessageBox.question(self, "Processing", "Cancel the current operation and close after it stops?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
@@ -1517,6 +1791,8 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         self.play_timer.stop()
+        if self.reference_dialog:
+            self.reference_dialog.close()
         if self.sequence_dialog:
             self.sequence_dialog.close()
         if self.new_project_dialog:
@@ -1528,3 +1804,19 @@ class MainWindow(QMainWindow):
             self.preview_worker.cancel()
             self.preview_worker.wait()
         event.accept()
+
+
+def _with_edit_history(method):
+    def tracked(self,*args,**kwargs):
+        before=self._edit_snapshot()
+        result=method(self,*args,**kwargs)
+        after=self._edit_snapshot()
+        if before!=after:
+            self._history().record(before,after,method.__name__)
+            self._update_state()
+            self._refresh_editor()
+        return result
+    return tracked
+
+for _method in ('_set_root','delete_root','_setting_changed','_set_roi','_clear_roi','_save_character_profile','_apply_color','_normalize_preset','enable_full_processing'):
+    setattr(MainWindow,_method,_with_edit_history(getattr(MainWindow,_method)))

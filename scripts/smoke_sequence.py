@@ -67,7 +67,7 @@ def run(output, language):
         p = window.project
         assert p.is_passthrough and not p.root_keyframes
         assert p.export_settings.animation_name == "idle"
-        assert window.steps.currentIndex() == 5 and all(not window.steps.isTabEnabled(i) for i in range(1, 5))
+        assert window.steps.currentIndex() == 3 and not window.steps.isTabEnabled(1) and window.steps.isTabEnabled(2)
         assert p.layout.normalize_scale == (1., 1.) and p.layout.width == p.layout.height == 512
         assert window.timeline.model.data(window.timeline.model.index(0, 1)) == manager().t("Skipped")
         window.parameter_panels[5].fields["export_settings.columns"].setValue(10)

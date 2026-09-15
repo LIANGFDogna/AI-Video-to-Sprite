@@ -69,8 +69,10 @@ def run(output: Path):
         wait(lambda: window.worker is None)
         print("GUI: keyed", flush=True)
         wait(lambda: window.preview_worker is None and not window.preview_timer.isActive())
+        window.steps.setCurrentIndex(2)
+        window.editor.alignment()
         window._arm("root")
-        app.processEvents()
+        wait(lambda: window.viewer.image_size[0] > 0 and window.preview_worker is None and not window.preview_timer.isActive())
         point = window.viewer.mapFromScene(QPointF(*roots[0]) * window.viewer.display_scale)
         QTest.mouseClick(window.viewer.viewport(), Qt.MouseButton.LeftButton, pos=point)
         assert 0 in window.project.root_keyframes
@@ -91,20 +93,24 @@ def run(output: Path):
         app.processEvents()
         window.grab().save(str(output / "gui-sprite-sheet.png"))
         window.steps.setCurrentIndex(2)
+        window.editor.alignment()
+        wait(lambda: window.worker is None and window.editor.provider is not None)
         window.overlay_checks["path"].setChecked(True)
         window.select_frame(12)
         wait(lambda: window._preview_frame_index == 12 and window.preview_worker is None and not window.preview_timer.isActive())
         assert window.viewer.frame.root == window.project.tracking_results[12].root
         window.grab().save(str(output / "gui-anchor.png"))
         # Playback must present frames despite debouncing; extraction count stays intact.
-        before = window.current_frame
-        window.toggle_play()
+        window.editor.inspector.setCurrentIndex(0)
+        wait(lambda: window.editor.worker is None and not window.editor.pending)
+        before = window.editor.index
+        window.editor.toggle_play()
         playback_start = time.monotonic()
         while time.monotonic() - playback_start < 0.5:
             app.processEvents()
             time.sleep(0.015)
-        window.toggle_play()
-        assert window.current_frame != before
+        window.editor.toggle_play()
+        assert window.editor.index != before
         assert window.project.video.frame_count == 24
         window.save_project(output / "demo.aivsprite")
         wait(lambda: window.worker is None)

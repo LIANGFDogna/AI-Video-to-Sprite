@@ -114,8 +114,45 @@ class Pipeline:
         inputs = (self.root_signature(), asdict(self.project.motion_settings), profile.transform_key() if profile else None)
         return signature(*inputs, self.project.sequence_fps) if self.project.input_mode == "frame_sequence" else signature(*inputs)
 
+    def final_signature(self):
+        p = self.project
+        base=signature(self.align_signature(),asdict(p.timeline_edit),p.video.fps,p.export_settings.loop,"editor_v1") if p.timeline_edit.enabled else self.align_signature()
+        return signature(base,"animation_offset_v1",asdict(p.animation_transform)) if p.animation_transform.active else base
+
     def sheet_signature(self):
-        return signature(self.align_signature(), self.project.export_settings.columns)
+        return signature(self.final_signature(), self.project.export_settings.columns)
+
+    def ensure_final(self):
+        self.ensure_aligned()
+        p = self.project
+        if not p.has_final_edits:
+            p.final_frames, p.final_timing = [], []
+            return
+        from app.core.timeline_renderer import compile_final_timing, render_timeline_frame
+        p.timeline_edit.validate(p.video.frame_count)
+        timing = compile_final_timing(p)
+        if not timing:
+            raise ValueError("Timeline has no visible frames")
+        sig = self.final_signature()
+        folder = self.cache_dir / "final_frames"
+        cached = self._manifest("final")
+        if cached.get("signature") == sig and self._files_valid(folder, len(timing)):
+            p.final_frames = [FrameData(**f) for f in cached['frames']]
+            p.final_timing = cached['timing']
+        else:
+            self._invalidate("final")
+            frames = []
+            for index, item in enumerate(timing):
+                check_cancel(self.cancel)
+                pixels, frame = render_timeline_frame(p, item, lambda i: self.cache.read(frame_path(self.aligned, i)), index, lambda i:self.cache.read(frame_path(self.keyed,i)))
+                save_rgba(frame_path(folder, index), pixels)
+                frames.append(frame)
+                self.progress(index+1, len(timing), "Rendering timeline frames")
+            review_warnings(frames, p.export_settings.loop, root_tracked=not p.is_passthrough)
+            self._commit("final", sig, frames=[asdict(f) for f in frames], timing=timing)
+            p.final_frames, p.final_timing = frames, timing
+        p.layout.clipped_frames = [f.index for f in p.final_frames if 'Clipping' in f.warnings]
+
 
     def ensure_raw(self):
         if self.project.input_mode == "frame_sequence":
@@ -400,12 +437,12 @@ class Pipeline:
         self._commit("source_align", sig, frames=[asdict(f) for f in p.tracking_results])
 
     def build(self):
-        self.ensure_aligned()
+        self.ensure_final()
         p = self.project
         sig = self.sheet_signature()
         from app.core.final_frame_provider import FinalFrameProvider
-        provider = FinalFrameProvider(p, self.cache_dir, self.align_signature())
-        paths = [provider.final_path(i) for i in range(p.video.frame_count)]
+        provider = FinalFrameProvider(p, self.cache_dir, self.final_signature())
+        paths = [provider.final_path(i) for i in range(len(provider))]
         if self._manifest("sheet").get("signature") != sig or not self.sheet.is_file():
             self._invalidate("sheet")
             build_sheet(paths, self.sheet, p.layout.width, p.layout.height, p.export_settings.columns, self.progress, self.cancel)

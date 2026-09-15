@@ -5,6 +5,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QImage, QPainter, QPainterPath, QPen, QPixmap, QFont
 from PySide6.QtWidgets import QGraphicsScene, QGraphicsView
 from app.ui.character_overlay import draw_character_space
+from app.ui.reference_overlay import draw_reference
 
 
 class VideoViewer(QGraphicsView):
@@ -25,6 +26,8 @@ class VideoViewer(QGraphicsView):
         self.image_size = (0, 0)
         self.frame = None
         self.character_profile = None
+        self.character_reference = None
+        self.reference_mapping = (1.,1.,0.,0.)
         self.root_visible = True
         self.root_path = []
         self.root_paths = {}
@@ -70,6 +73,8 @@ class VideoViewer(QGraphicsView):
         self.image_size = (0, 0)
         self.frame = None
         self.character_profile = None
+        self.character_reference = None
+        self.reference_mapping = (1.,1.,0.,0.)
         self.root_path = []
         self.root_paths = {}
         self.roi_rect = None
@@ -150,6 +155,9 @@ class VideoViewer(QGraphicsView):
             l, top, r, b = self.roi_rect
             painter.setPen(self.pen("#78bafa", 2))
             painter.drawRect(QRectF(l*s, top*s, (r-l)*s, (b-top)*s))
+        if self.character_reference and self.overlays.get('reference',True):
+            draw_reference(painter,self,self.character_reference,self.reference_mapping,
+                self.overlays.get('reference_ground',True),self.overlays.get('reference_axes',True))
         f = self.frame
         if f is None:
             return

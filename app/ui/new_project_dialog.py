@@ -1,11 +1,12 @@
 """Project parameters and explicit empty-directory reuse; no media selection here."""
 from pathlib import Path
+import logging
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QComboBox, QDialog, QDoubleSpinBox, QFormLayout,
-    QHBoxLayout, QLabel, QLineEdit, QPushButton, QSpinBox, QVBoxLayout)
+    QHBoxLayout, QLabel, QLineEdit, QPushButton, QSpinBox, QVBoxLayout, QScrollArea, QWidget)
 from app.i18n import t, translate_error
 from app.core.project_workspace import create_project_workspace, sanitize_project_name, TEMPLATES
-from app.ui.folder_picker import FolderPickerDialog
+from app.ui.dialogs import FileDialog, MessageBox, path_context
 from app.ui.theme import STYLE
 
 CANVAS_PRESETS = {"1536x1536": (1536, 1536), "1024x1536": (1024, 1536), "512x512": (512, 512)}
@@ -13,6 +14,7 @@ CANVAS_PRESETS = {"1536x1536": (1536, 1536), "1024x1536": (1024, 1536), "512x512
 
 class NewProjectDialog(QDialog):
     project_created = Signal(object, object)
+    project_open_requested = Signal(object)
 
     def __init__(self, parent=None, initial_directory=""):
         super().__init__(parent)
@@ -20,15 +22,21 @@ class NewProjectDialog(QDialog):
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setModal(False)
         self.setStyleSheet(STYLE)
-        self.resize(660, 580)
-        layout = QVBoxLayout(self)
+        screen=self.screen().availableGeometry()
+        self.resize(min(760,screen.width()-50),min(760,screen.height()-70))
+        self.memory,_=path_context(parent)
+        self._submitted=False;self.existing_project=None
+        outer=QVBoxLayout(self)
+        self.scroll_area=QScrollArea();self.scroll_area.setWidgetResizable(True)
+        body=QWidget();layout=QVBoxLayout(body);self.scroll_area.setWidget(body)
+        outer.addWidget(self.scroll_area,1)
         form = QFormLayout()
         self.name = QLineEdit()
         self.name.setPlaceholderText("MainCharacter")
         self.name.editingFinished.connect(self._sanitize_name)
         form.addRow(t("Project Name"), self.name)
         row = QHBoxLayout()
-        self.directory = QLineEdit(initial_directory or str(Path.home() / "Documents"))
+        self.directory = QLineEdit(initial_directory or str(self.memory.initial("project_create")))
         self.browse_button = QPushButton(t("Choose project directory"))
         self.browse_button.clicked.connect(self.choose_directory)
         row.addWidget(self.directory, 1)
@@ -82,16 +90,20 @@ class NewProjectDialog(QDialog):
         self.reuse_button.clicked.connect(lambda: self.create_project(use_existing_empty=True))
         self.reuse_button.hide()
         layout.addWidget(self.reuse_button)
+        self.open_existing_button=QPushButton(t("Open existing project"));self.open_existing_button.hide()
+        self.open_existing_button.clicked.connect(self.open_existing);layout.addWidget(self.open_existing_button)
+        self.rename_button=QPushButton(t("Change project name"));self.rename_button.hide()
+        self.rename_button.clicked.connect(lambda:(self.name.setFocus(),self.name.selectAll()));layout.addWidget(self.rename_button)
         bottom = QHBoxLayout()
         bottom.addStretch()
         self.create_button = QPushButton(t("Create Project"))
         self.create_button.setObjectName("primary")
         self.create_button.clicked.connect(lambda: self.create_project())
         self.cancel_button = QPushButton(t("Cancel"))
-        self.cancel_button.clicked.connect(self.close)
+        self.cancel_button.clicked.connect(self.reject)
         bottom.addWidget(self.create_button)
         bottom.addWidget(self.cancel_button)
-        layout.addLayout(bottom)
+        outer.addLayout(bottom)
         for button in self.findChildren(QPushButton):
             button.setAutoDefault(False)
         self.template.currentIndexChanged.connect(self._apply_template)
@@ -139,20 +151,29 @@ class NewProjectDialog(QDialog):
     def _destination_changed(self):
         target = str(Path(self.directory.text()) / self.name.text())
         self.destination.setText(t("Project location: {path}", path=target))
-        self.reuse_button.hide()
+        self.destination.setToolTip(target)
+        self.directory.setToolTip(self.directory.text())
+        self.create_button.setEnabled(bool(self.name.text().strip()) and bool(self.directory.text().strip()))
+        self.reuse_button.hide();self.open_existing_button.hide();self.rename_button.hide()
 
     def choose_directory(self):
-        folder = FolderPickerDialog.choose(self, "Choose project directory", self.directory.text())
+        folder = FileDialog.getExistingDirectory(self, "Choose project directory", self.directory.text(),purpose="project_create")
         if folder:
             self.directory.setText(folder)
 
+    def open_existing(self):
+        if self.existing_project and self.existing_project.is_file():
+            self._submitted=True;self.project_open_requested.emit(self.existing_project);self.accept()
+
     def create_project(self, use_existing_empty=False):
+        if self._submitted:return
         self._sanitize_name()
         try:
             project, path = create_project_workspace(self.directory.text(), self.name.text(), self.template.currentData(),
                 (self.output_width.value(), self.output_height.value()), self.fps.value(),
                 (self.source_width.value(), self.source_height.value()), use_existing_empty)
         except (ValueError, OSError) as error:
+            logging.getLogger("aivsprite.ui").warning("Project creation failed",exc_info=True)
             self.message.setText(translate_error(str(error)))
             target = Path(self.directory.text()) / self.name.text()
             try:
@@ -160,6 +181,14 @@ class NewProjectDialog(QDialog):
             except OSError:
                 empty = False
             self.reuse_button.setVisible(empty)
+            existing=target/(self.name.text()+'.aivsprite')
+            self.existing_project=existing if existing.is_file() else None
+            self.open_existing_button.setVisible(self.existing_project is not None)
+            self.rename_button.setVisible(target.exists())
+            if target.exists() and not empty:self.message.setText(t("Project directory already exists. Open the existing project or change its name."))
+            if isinstance(error,OSError):MessageBox.warning(self,"New Project",translate_error(str(error)))
             return
+        self._submitted=True
+        self.memory.remember("project_create",path.parent.parent)
         self.project_created.emit(project, path)
         self.close()

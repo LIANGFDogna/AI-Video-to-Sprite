@@ -37,3 +37,15 @@
 
 - 视频 keyed_passthrough 只消费抠像后完整 RGBA；禁止 Root/Ground/Profile 对齐、运动提取、逐帧居中或 Alpha 裁切。原画布默认，统一尺寸转换需用户选择。
 - 抠像完成显示两个入口，模式按动画保存；恢复完整处理保留设置并复用 keyed cache。未跟踪时不导出虚构 Root，真实运动留在帧内。
+
+## 帧编辑器当前约束
+- source_frames/video/tracking保持源索引；编辑结果独立final_frames/final_timing。删除仅移除实例；同源复制帧有独立ID与偏移。
+- 编辑偏移以最终Cell像素计；用户手动变换发生在项目CanvasFit和原自动处理之后；参考轨只作预览，不进入PNG。
+- 五页导航，Root/Motion/Align合并编辑侧栏；源素材只读，撤销保存参数快照，耗时渲染走Worker。
+
+## Character Reference 边界（2026-09-15）
+
+Reference是用户摆放且锁定的项目坐标轴，不是旧跟踪Root/CanonicalRoot。首次Idle像素固定；普通编辑只改AnimationTransform整动画XY（项目像素）。中心CanvasFit及旧Profile算法不改。Ghost不套用任何动画Offset、不导出。全帧偏移复用最终Provider，越界只警告，旧字段缺省兼容。
+
+## Path Memory本轮
+机器路径历史只进app_settings，不进.aivsprite；新建成功父目录独立记忆，Work按E/D/C/Home回退；取消/失败不写历史；全部算法保持基线。

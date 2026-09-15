@@ -44,3 +44,14 @@
 | project_workspace | 名称/模板/目录 → 空工程文件 | models/标准库 | 独占创建；非空不覆盖；无自动 Profile |
 | folder_picker | 目录浏览 → 明确选定路径 | Qt QFileSystemModel/Worker | 自有主题、异步辅助信息、单击和双击不提交 |
 | new_project_dialog/start_page | 创建参数/项目状态 → 用户入口 | Qt/Project | 复用未保存确认；无自动素材选择 |
+
+| timeline_edit | 源索引+命令→非破坏时间线 | 标准库 | 稳定ID、4轨、锁定、数量/时长曲线、撤销 |
+| timeline_renderer | 基础Cell+时间线→最终PNG/时序 | core/cache | 预乘合成、源元数据保留、最终Provider唯一 |
+| frame_editor | 用户操作→编辑指令/预览 | Qt/Worker | 可选区段、画布拖动、曲线、历史、无磁盘删除 |
+
+## Character Reference 模块
+
+models/character_reference.py只定义不可变几何/XY；core/character_reference.py负责原Idle缓存；core/animation_transform.py负责共享整动画渲染；ui/character_reference_dialog.py仅编辑草稿轴；reference_overlay.py不触碰导出图像。Reference不加入raw/key/align签名，AnimationTransform只加入final签名。
+
+## Path Memory
+utils设置与路径服务无Qt/Project依赖；ui/dialogs是统一文件入口；FolderPicker复用服务，业务在成功回调commit，NewProject只在创建成功commit。

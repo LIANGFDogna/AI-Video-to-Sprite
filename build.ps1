@@ -1,4 +1,4 @@
-param([string]$DistPath = 'dist')
+﻿param([string]$DistPath = 'dist')
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
 $spriteOutputRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot $DistPath))
@@ -13,6 +13,9 @@ $spriteRunning = Get-Process -Name 'AI Video to Sprite' -ErrorAction SilentlyCon
 if ($spriteRunning) {
     throw 'The release is running. Use -DistPath with a separate output folder to keep it open.'
 }
+if (Test-Path -LiteralPath $spriteReleaseDirectory) {
+    throw 'Release directory already exists. Build with a fresh -DistPath, then use scripts/publish_release.ps1 to preserve user data.'
+}
 $spriteOriginalPath = $env:PATH
 $spriteOriginalConfig = $env:PYINSTALLER_CONFIG_DIR
 try {
@@ -26,7 +29,7 @@ try {
     $env:PATH = $spriteOriginalPath
     $env:PYINSTALLER_CONFIG_DIR = $spriteOriginalConfig
 }
-Copy-Item -LiteralPath 'README.md','ARCHITECTURE.md','TASKS.md','VALIDATION.md' -Destination $spriteReleaseDirectory
+Copy-Item -LiteralPath 'README.md','ARCHITECTURE.md','TASKS.md','VALIDATION.md','UI_AUDIT.md' -Destination $spriteReleaseDirectory
 if (Test-Path -LiteralPath 'examples\demo.aivsprite') {
     New-Item -ItemType Directory -Path $spriteExamples -Force | Out-Null
     Copy-Item -LiteralPath 'examples\demo.aivsprite','examples\demo_green_screen.mp4' -Destination $spriteExamples
@@ -136,4 +139,40 @@ if (-not $spriteCanvasSmoke.WaitForExit(90000)) {
 }
 $spriteCanvasSmoke.Refresh()
 if ($spriteCanvasSmoke.ExitCode -ne 0) { throw "Packaged project canvas failed ($($spriteCanvasSmoke.ExitCode)). Check logs/app.log." }
+$spriteEditorDirectory = Join-Path $PSScriptRoot ('build\editor-smoke-' + [Guid]::NewGuid().ToString('N'))
+$spriteEditorSmoke = Start-Process -FilePath $spriteExecutable -ArgumentList @('--smoke-editor', ('"' + $spriteEditorDirectory + '"')) -WindowStyle Hidden -PassThru
+if (-not $spriteEditorSmoke.WaitForExit(60000)) {
+    $spriteEditorSmoke.Kill()
+    throw 'Packaged frame editor / multitrack / retime / export / reopen timed out.'
+}
+$spriteEditorSmoke.Refresh()
+if ($spriteEditorSmoke.ExitCode -ne 0) { throw "Packaged editor failed ($($spriteEditorSmoke.ExitCode)). Check logs/app.log." }
+$spriteEditorReport = Get-Content -LiteralPath (Join-Path $spriteEditorDirectory 'validation.json') -Raw | ConvertFrom-Json
+if ($spriteEditorReport.status -ne 'passed') { throw 'Missing editor acceptance result.' }
+$spriteReferenceReports = @()
+$spritePreviousScreenScale = $env:QT_SCREEN_SCALE_FACTORS
+$spritePreviousScale = $env:QT_SCALE_FACTOR
+try {
+    $env:QT_SCALE_FACTOR = '1'
+    foreach ($spriteReferenceScale in @('1.25', '1.5')) {
+        $env:QT_SCREEN_SCALE_FACTORS = (@($spriteReferenceScale) * 8) -join ';'
+        $spriteReferenceDirectory = Join-Path $PSScriptRoot ('build\reference-frozen-' + $spriteReferenceScale + '-' + [Guid]::NewGuid().ToString('N'))
+        $spriteReferenceSmoke = Start-Process -FilePath $spriteExecutable -ArgumentList @('--smoke-character-reference', ('"' + $spriteReferenceDirectory + '"')) -WindowStyle Hidden -PassThru
+        if (-not $spriteReferenceSmoke.WaitForExit(175000)) {
+            $spriteReferenceSmoke.Kill()
+            throw 'Packaged Character Reference calibration / animation offsets / export timed out.'
+        }
+        $spriteReferenceSmoke.Refresh()
+        if ($spriteReferenceSmoke.ExitCode -ne 0) { throw "Packaged Character Reference failed ($($spriteReferenceSmoke.ExitCode)). Check logs/app.log." }
+        $spriteReferenceReport = Get-Content -LiteralPath (Join-Path $spriteReferenceDirectory 'validation.json') -Raw | ConvertFrom-Json
+        if ($spriteReferenceReport.status -ne 'passed' -or [math]::Abs($spriteReferenceReport.dpr - [double]$spriteReferenceScale) -gt 0.001) { throw 'Missing reference acceptance or incorrect actual DPI.' }
+        $spriteReferenceReports += $spriteReferenceReport
+    }
+} finally {
+    $env:QT_SCREEN_SCALE_FACTORS = $spritePreviousScreenScale
+    $env:QT_SCALE_FACTOR = $spritePreviousScale
+}
+$spritePathReports = & (Join-Path $PSScriptRoot 'scripts\verify_path_ui.ps1') -Executable $spriteExecutable
+$spriteReceipt = @{ status = 'passed'; build_version = '20260915-path-memory-ui-audit'; path_validation = $spritePathReports; reference_validation = $spriteReferenceReports; editor_validation = $spriteEditorReport; executable_sha256 = (Get-FileHash -LiteralPath $spriteExecutable -Algorithm SHA256).Hash; verified_at = (Get-Date).ToString('o') }
+$spriteReceipt | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $spriteReleaseDirectory 'release-validation.json') -Encoding UTF8
 Write-Host "Built $spriteExecutable. Video input uses FFmpeg; frame sequence input does not. All release checks passed."

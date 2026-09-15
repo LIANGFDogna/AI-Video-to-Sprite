@@ -82,7 +82,7 @@ def run(output, language="zh_CN", project_path=None):
         app.processEvents()
         window.motion_editor.fit_image()
         window.grab().save(str(output / "motion.png"))
-        window.steps.setCurrentIndex(5)
+        window.steps.setCurrentIndex(3)
         review = window.open_animation_preview()
         assert review is not None and not review.isModal()
         ready(review)

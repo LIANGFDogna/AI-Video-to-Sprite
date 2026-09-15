@@ -1,5 +1,64 @@
 # Architecture · v0.4
 
+## 机器路径设置与统一窗口（2026-09-16）
+
+`utils/app_settings.py`复用既有机器配置，读UTF-8/BOM并容忍损坏内容；写入使用同目录唯一临时文件、fsync及原子replace。`TranslationManager.save_language`合并字段，避免语言保存覆盖路径历史。`utils/path_memory.py`的`PathMemoryService`不依赖Qt或Project，保存`path_state(version=1,work_root,last_location,recent_paths)`。
+
+用途键：project_create、project_open、project_save、video_import、image_import、image_sequence_import、folder_import、png_export、sprite_sheet_export、frame_export、project_export、generic_open、generic_save、generic_folder。未提供独立UI的用途只预留接口。项目数据只保留其正式源引用，不保存FileDialog浏览历史。
+
+新建优先成功创建的父目录，失效直接Work；其他用途优先自己的有效历史/有效祖先，再全局last_location、当前工程、Work、Home。WORK_ROOT名义默认E:/AI Video to Sprite/work，WORK_CANDIDATES为E→D→C；启动尝试创建，盘不存在或创建失败继续下一项。用户输入/选择的路径不受候选盘限制。应用安装目录仅作为隐式默认的排除条件，不作为默认内容路径；显式选中它仍尊重用户选择。
+
+`ui/dialogs.py`通过`path_context`取得MainWindow服务与当前project_file父目录。全部10个业务FileDialog调用明确purpose。Qt文件窗口设置DontUseNativeDialog，每次重建动态侧栏，过滤Qt恢复的旧动态项目防止累积；保留Computer/Home。目录统一分发FolderPicker，Computer模式无当前目录时禁用选择/新建，返回正常目录时恢复。
+
+提交边界：UI选择→业务导入/打开/保存/导出成功回调→remember→原子设置写入→下次窗口initial。新建目录浏览不记忆，真正创建成功才记父目录。导出记生成bundle的父目录，不记其带时间戳子目录。四类导出分开（Godot项目/Sheet/最终Frames/源RGBA）。Preview导出继续调用同一choose_export。
+
+MainWindow统一忙状态、空素材禁用与文件快捷键状态；编辑器命令尊重interaction_busy。NewProject滚动表单/固定底栏/实时路径/重复提交保护；无覆盖地处理同名工程。Sequence确认只提交一次。普通QDialog的操作按钮关闭autoDefault；MessageBox尊重显式默认，含Cancel/No时默认回避意外提交。直通模式的Root/Motion/Align控件禁用优先于其他状态刷新。
+
+验证分层：服务单测、真实Qt窗口回归、AST调用与信号清单、原生和冻结双进程exercise/restart、实际DPR断言、最后dist再验收。`scripts/verify_path_ui.ps1`验证100/125/150%，125%以英文首启；每次用独立测试settings，避免污染用户配置。处理算法保护哈希见PATH_MEMORY_PLAN.md与build/path-protected-hashes.json。
+
+## Character Reference 第一阶段（2026-09-15）
+
+模型 `models/character_reference.py` 定义两个冻结数据类。`CharacterReference` 为项目唯一：reference_animation_id/reference_frame_index/origin_x/ground_y/project_canvas_width/height/locked；加入 Project.PROJECT_FIELDS，动画快照不复制它，切换动画注入当前唯一参考。`AnimationTransform` 为动画独立offset_x/y，单位项目画布像素；快照与保存重开保留。缺失字段分别迁移为None和零变换，schema_version仍为1。
+
+旧Root是单动画检测/运动轨迹；旧CharacterProfile是固定Scale、CanonicalRoot及对称安全框的自动对齐配置。新Reference只描述用户摆放的坐标轴，不覆盖上述字段、不自动启用其对齐。首次校准UI明确将旧完整处理切换为既有直通，保留其参数与整画布缩放；仅赋值Reference数据不会改变像素处理。
+
+`ui/character_reference_dialog.py` 固定原始keyed pixmap，独立校准草稿允许Ground/YAxis/Origin按轴拖动和键盘微调，屏幕命中阈值除以视图变换换算到项目空间。保存一次性提交锁定模型；正常 `EditorCanvas` 的所有内容拖动只调用整动画Offset命令。旧逐帧编辑由独立拖动范围选择，不创建新的一套逐帧修正数据。
+
+`core/character_reference.py` 通过参考动画ID定位现有keyed缓存。ReferenceSource缓存原始Idle及单个输出尺寸的图像，FrameCache预算48MB，播放不重复读盘。忽略参考动画自己的Offset、时间线和Root自动对齐，也忽略当前动画Offset；缓存缺失可后台一次性重建。`reference_overlay.py` 绘制固定轴，`EditorCanvas`独立ghost图元不跟随当前pixmap位移，原始坐标文本不按DPI缩放数值。辅助图元不进入最终帧。
+
+`core/animation_transform.py` 是统一整动画平移函数。直通模式从已标准化keyed/raw读取，项目像素XY平移、透明裁切后调用既有canvas_normalizer；uint16保留到float32预乘Resize/最终RGBA8。整帧固定变换，不依据Alpha/Root/武器定位。Alpha仅检测非阻塞越界提示，不参与位置和缩放。旧完整流程可在原结果上显式附加按布局比例换算的Offset。
+
+`timeline_renderer` 实时及落盘均调用此函数：有时间线时先整动画变换，再旧实例变换/合成；无时间线但有Offset时构造源帧身份时间映射，不生成frame_overrides。Project.has_final_edits驱动final缓存与输出，解决只修改整动画Offset却未启用时间线的导出路径。零Offset保持旧签名，非零Offset单独进入final_signature，不改变raw/key/align签名。Reference几何不进入图像缓存签名。
+
+MainWindow现有EditHistory覆盖Reference和Offset。undo/redo依据变更字段还原项目Reference，防止其他动画的旧历史快照回滚不相关的项目级参考修改。导出JSON额外记录Reference和AnimationTransform及项目像素单位；final bbox/root/ground依据实际最终渲染更新。
+
+**完全未修改** `core/canvas_fit.py`、`core/canvas_normalizer.py`、`core/frame_sequence.py`、`core/video_decoder.py`，SHA256基线记录于 CHARACTER_REFERENCE_PLAN.md。输入中心裁补与手工角色对齐保持独立。
+
+## 五页编辑器与非破坏性输出层（2026-09-15）
+
+公开导航固定为导入/抠像/编辑/精灵图/导出。MainWindow 只保留旧 ParameterPanel 索引作为内部控件映射；Root/Motion/Align 实际控件重挂到 FrameEditor 对齐侧栏，不再作为三个大页面。EditorCanvas、EditorTimeline、CurveEditor 分别负责画布交互、多轨场景和时间曲线；模型与渲染不依赖 Qt。
+
+`TimelineEdit` 的稳定实例 ID 引用原 `source_index`。每块保存 start/duration/track/keyframe/speed/curve/reversed，frame_overrides 以实例 ID 保存位移、比例与透明度；复制产生新 ID。删除不修改源文件。动画切换保存各自编辑状态，项目画布和 Character Profile 仍项目级唯一。旧 JSON 缺省 enabled=false；schema_version 维持 1。
+
+```text
+原素材 → 项目中心 Canvas Fit → Key / 已透明帧
+     → 原 Root / Motion / Align 或显式直通 → Normalize / aligned Cell
+     → timeline_renderer（取帧 / 实例变换 / 轨道合成 / 时长）
+     → FinalFrameProvider → 编辑预览 / Export Review / Sheet / PNG / Godot JSON
+```
+
+源 `video.frame_count/tracking_results` 与输出 `final_frames/final_timing` 分离，禁止抽帧后覆盖源索引。compile_timeline 按可见非参考轨的所有时间边界扫描；同轨重叠取起点较晚的块，跨轨按 main→overlay→effects 预乘 Alpha source-over，空区间透明。事件时间四舍五入到 10 位小数，输出限制 100000 帧。
+
+手动偏移为最终 Cell 像素；默认变换逐字节保留 RGB/Alpha，整数平移用直接切片；浮点位移/比例使用现有预乘 warp。Cell 大小固定，不按 Alpha/Root 自动重新居中。最终 bbox 重新检测，Root/Ground 随显式变换，越界仅警告。参考轨只由编辑 UI 临时叠加；不能进入最终 Provider。
+
+Pipeline.ensure_final 在 ensure_aligned 后运行。final.json / final_frames 独立保存；final_signature 包含 align 签名、编辑数据、源 FPS 和循环选项，sheet 签名依赖 final。manifest 原子提交；保存迁移缓存时也清理目标旧 final manifest。原 raw/keyed/aligned 可复用，Root 原始运动不随编辑删除。
+
+FinalFrameProvider 的实时编辑模式深拷贝参数，只从基础 aligned 缓存按需读取，调用与落盘 final 完全相同的 render_timeline_frame。实时图像与基础帧均有字节预算 LRU；GUI 使用 QThread 及 revision 丢弃过期帧，QTimer 播放。导出使用落盘 final 缓存；集成测试逐帧核对实时、独立预览和 PNG。
+
+数量重定时按曲线重映射源实例，保护首尾/标记关键帧。时长重定时按原 duration 累积占比和反曲线重新分配正时长，保持已有停顿相对关系；单轨连续区间之外的帧时长不变。变换插值分段经过所有标记关键帧。EditHistory 保存参数前后快照（80 步），包括 Root/Motion/Align 与编辑状态；Undo 后重建派生缓存，不反向修改文件。
+
+Godot JSON 使用最终帧数、源映射、time/duration/layers 和最终坐标。Sprite PNG 不承载时间，调用者应读取 JSON 帧时长；root_motion_time_basis=original_source_frames 明示独立的原始运动时间轴。旧项目无编辑时继续走原 provider/cache/signature。
+
 ## 模块边界
 
 `models` 定义纯 Python 数据模型与兼容 JSON；`core` 提供无 Qt 图像、跟踪、运动和缓存管线；`exporters` 消费完成的最终帧；`ui` 负责 Qt 交互及 QThread 协调；`i18n` 管理 UI 翻译；`utils` 管理进程、路径、日志和字节预算 LRU。
@@ -187,3 +246,12 @@ AnimationPreview 为非模态 QDialog；QTimer 调度，Worker 执行磁盘读�
 ## 复核
 
 架构：core 不依赖 UI，Preview/Export 共用最终帧，没有第二条变换流水线。数据流：源/目标单位与缓存依赖由集成测试验证；提取运动与循环视觉校正分开。工程：保留旧回归，增加 1536→512、运动 A–F、i18n、实际 Qt 播放与导出逐像素检查；PyInstaller 在 Python 进程内隔离 DLL 搜索路径，避免外部 ICU 污染。
+
+
+## 抠像直通入口与发布位置修复
+
+MainWindow 的两种显式模式入口同时出现在抠像页与精灵图页。视频 keyed_ready 且缺少首帧 Root 时，通用 build_sprites 展示精灵图页选择，不运行跟踪，也不隐式切换模式。用户点击直接构建后才设置 keyed_passthrough，再走唯一 Pipeline / FinalFrameProvider；已有 Root 的完整处理仍保持原行为。切换回完整处理继续复用 keyed cache。
+
+发布在独立目录完成冻结验收，scripts/publish_release.ps1 仅将程序运行文件和文档更新到固定 dist 路径，检查运行占用并保留原有用户数据。根目录启动器固定指向该位置，避免旧发布目录造成入口缺失。
+
+2026-09-15 编辑器模型已接入工程、最终缓存、导出和五页导航，详见本文件新增章节。

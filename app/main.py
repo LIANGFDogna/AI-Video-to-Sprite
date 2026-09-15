@@ -24,7 +24,16 @@ def main() -> int:
     parser.add_argument("--smoke-keyed-passthrough", type=Path, help="Validate a video's key, passthrough, preview, export and full-mode resume")
     parser.add_argument("--smoke-output", type=Path, help="Output folder for keyed passthrough validation")
     parser.add_argument("--smoke-project-canvas", type=Path, help="Validate project canvas creation, mixed inputs, preview and export")
+    parser.add_argument("--smoke-editor", type=Path, help="Validate the animation editor and three export workflows")
+    parser.add_argument("--smoke-character-reference", type=Path, help="Validate locked character axes, whole-animation offsets and final export")
+    parser.add_argument("--smoke-path-memory",type=Path,help="Validate file dialogs, persistent purpose paths and UI controls")
+    parser.add_argument("--verify-path-memory",action="store_true",help="Second-process verification of saved path history")
     args = parser.parse_args()
+    import os,tempfile,uuid
+    if args.smoke_path_memory:
+        os.environ['AIVSPRITE_SETTINGS']=str(args.smoke_path_memory.resolve()/'machine-settings.json')
+    elif any((args.smoke_test,args.smoke_preview,args.smoke_workspace,args.smoke_keyed_passthrough,args.smoke_project_canvas,args.smoke_editor,args.smoke_character_reference)) and 'AIVSPRITE_SETTINGS' not in os.environ:
+        os.environ['AIVSPRITE_SETTINGS']=str(Path(tempfile.gettempdir())/'AI Video to Sprite'/('smoke-settings-'+uuid.uuid4().hex+'.json'))
     app = QApplication(sys.argv[:1])
     app.setApplicationName("AI Video to Sprite")
     app.setOrganizationName("AI Video to Sprite")
@@ -39,7 +48,16 @@ def main() -> int:
     sys.excepthook = exception_hook
     window = MainWindow(log_path)
     window.show()
-    if args.smoke_project_canvas:
+    if args.smoke_path_memory:
+        from app.path_ui_smoke import start_path_smoke
+        start_path_smoke(app,window,args.smoke_path_memory,args.verify_path_memory)
+    elif args.smoke_character_reference:
+        from app.character_reference_smoke import start_reference_smoke
+        start_reference_smoke(app, window, args.smoke_character_reference)
+    elif args.smoke_editor:
+        from app.editor_smoke import start_editor_smoke
+        start_editor_smoke(app, window, args.smoke_editor)
+    elif args.smoke_project_canvas:
         from app.project_canvas_smoke import start_canvas_smoke
         start_canvas_smoke(app, window, args.smoke_project_canvas)
     elif args.smoke_keyed_passthrough:

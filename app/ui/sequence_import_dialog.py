@@ -76,6 +76,8 @@ class SequenceImportDialog(QDialog):
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         self.import_button = buttons.button(QDialogButtonBox.StandardButton.Ok)
         self.import_button.setText(t("Import Frame Sequence"))
+        self.import_button.setAutoDefault(False)
+        self._submitted=False
         buttons.button(QDialogButtonBox.StandardButton.Cancel).setText(t("Cancel"))
         self.import_button.setEnabled(bool(project_canvas) or not scan.mixed_sizes)
         self.size_policy.currentIndexChanged.connect(lambda: self.import_button.setEnabled(not scan.mixed_sizes or self.size_policy.currentData() == "pad"))
@@ -84,7 +86,9 @@ class SequenceImportDialog(QDialog):
         layout.addWidget(buttons)
 
     def submit(self):
+        if self._submitted:return
         if self.scan.mixed_sizes and self.size_policy.currentData() != "pad" and not self.project_canvas:
             return
+        self._submitted=True
         self.import_requested.emit(self.scan, self.aligned.isChecked(), self.fps.value(), self.size_policy.currentData())
         self.close()

@@ -136,6 +136,7 @@ class AnimationPreview(QDialog):
 
     def button(self, text, callback):
         button = QPushButton(t(text))
+        button.setAutoDefault(False)
         button.clicked.connect(callback)
         return button
 
@@ -143,7 +144,7 @@ class AnimationPreview(QDialog):
         choice = self.fps.currentData()
         self.custom_fps.setVisible(choice == "Custom")
         value = self.project.video.fps if choice == "Source" else self.custom_fps.value() if choice == "Custom" else float(choice)
-        self.timer.setInterval(max(1, round(1000/max(.1, value))))
+        self.timer.setInterval(max(1, round(1000*self.provider.duration(self.index)))) if choice == "Source" else self.timer.setInterval(max(1, round(1000/max(.1, value))))
 
     def sequence(self):
         n = len(self.provider)
@@ -183,6 +184,7 @@ class AnimationPreview(QDialog):
         self.slider.blockSignals(True)
         self.slider.setValue(self.index)
         self.slider.blockSignals(False)
+        self.update_speed()
         self.request_frame()
 
     def request_frame(self, *args):
@@ -218,17 +220,21 @@ class AnimationPreview(QDialog):
             return
         self.last_pixels = pixels
         self.viewer.set_image(pixels)
-        frame = copy.deepcopy(self.project.tracking_results[index])
+        frame = copy.deepcopy(self.provider.frame_data(index))
         if before:
             self.viewer.character_profile = None
             frame.root = frame.raw_root or frame.root
-            self.viewer.root_path = [f.raw_root or f.root for f in self.project.tracking_results]
-            self.viewer.ground = self.project.tracking_results[0].ground
+            self.viewer.root_path = [f.raw_root or f.root for f in self.project.output_frames]
+            self.viewer.ground = self.project.output_frames[0].ground
         else:
             self.viewer.character_profile = self.project.character_profile
             frame.root, frame.bbox = frame.cell_root, frame.cell_bbox
-            self.viewer.root_path = [f.cell_root for f in self.project.tracking_results]
+            self.viewer.root_path = [f.cell_root for f in self.project.output_frames]
             self.viewer.ground = self.project.layout.ground_baseline
+        self.viewer.character_reference=self.project.character_reference
+        if self.project.character_reference:
+            from app.core.character_reference import reference_mapping
+            self.viewer.reference_mapping=(1.,1.,0.,0.) if before else reference_mapping(self.project.character_reference,self.project.layout,self.project.sprite_cell.preserve_aspect_ratio)
         self.viewer.frame = frame
         if self.project.is_passthrough:
             self.viewer.root_visible = False
@@ -236,7 +242,7 @@ class AnimationPreview(QDialog):
         self.viewer.viewport().update()
         self.frame_label.setText(t("Frame {frame:02d} / {count}", frame=index+1, count=len(self.provider)))
         self.warning_label.setText(" · ".join(t(w) for w in frame.warnings))
-        self.warning_button.setText(t("Warnings: {count}", count=sum(bool(f.warnings) for f in self.project.tracking_results)))
+        self.warning_button.setText(t("Warnings: {count}", count=sum(bool(f.warnings) for f in self.project.output_frames)))
 
     def _finished(self):
         worker = self.worker
@@ -281,7 +287,7 @@ class AnimationPreview(QDialog):
 
     def show_warnings(self):
         menu = QMenu(self)
-        for f in self.project.tracking_results:
+        for f in self.project.output_frames:
             if f.warnings:
                 action = menu.addAction(t("Frame {frame}: {warnings}", frame=f.index, warnings=" · ".join(t(w) for w in f.warnings)))
                 action.triggered.connect(lambda checked=False, i=f.index: self.select(i))

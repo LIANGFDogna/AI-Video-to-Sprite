@@ -1,5 +1,17 @@
 # Tasks
 
+## Current — Path Memory / UI Audit
+
+- [x] 统一AppSettings原子合并与PathMemoryService；用途历史、全局最近位置及重启恢复。
+- [x] 按用户最终修正规则：新建父目录可自由更改、记住成功创建位置、Work按E→D→C→Home回退。
+- [x] 全部10个FileDialog业务入口、缺失素材重定位、另存工程、各导出成功回调接入。
+- [x] 动态快捷侧栏、清晰文字导航、完整路径Tooltip；过滤旧Qt侧栏历史避免重复。
+- [x] 新建滚动表单/固定底栏/冲突打开或改名/重复提交保护；保存与取消行为保持。
+- [x] 按钮、Action与Shortcut绑定/忙状态/空项目状态/Enter/Esc审查；修复直通Root控件状态回归。
+- [x] 191项全量测试、705条中英翻译检查、31个处理算法文件哈希不变。
+- [x] 真实窗口中文/英文、中文空格及275字符以上目录、独立A/B/C/D用途、跨进程恢复。
+- [x] 新候选EXE全流程检查及正式dist发布；实际dist的100/125/150%和独立重启验收通过（VALIDATION.md）。
+
 ## Completed
 - 读取完整需求、确认空目录与 Python 3.12 / FFmpeg 环境。
 - 建立架构、坐标规范、缓存依赖、开发阶段与验收计划。
@@ -12,8 +24,30 @@
 - 提供锁定依赖、源码启动器、构建脚本和 examples/demo.aivsprite 示例工程。
 - Windows 独立 exe 已成功打包并启动退出（exit code 0）；构建依赖清单不含混入的 Poppler/libheif/ICU DLL。build.ps1 现在自动执行打包启动检查。
 
-## Current
-- 项目标准画布已接通，新增11项测试，全量125项通过；旧工程保持兼容。正在完成最终成品打包，结果见VALIDATION.md。
+## Completed — Character Reference 第一阶段
+
+- 完成项目唯一不可变Reference、单动画XY Offset及旧工程默认值；旧CharacterProfile/Root/Motion独立兼容。
+- 完成固定Idle第0帧校准、Ground/YAxis/Origin按轴拖动、1/10项目像素微调、保存锁定与显式重编辑。
+- 完成后续动画共轴、默认整动画拖动/数值XY、不产生逐帧覆盖、Undo/Redo及跨动画历史隔离。
+- 完成固定35% Idle Ghost、独立显示开关、缓存复用与缺失素材非阻塞提示。
+- 完成整动画Offset实时/落盘统一渲染、源PNG/Key缓存不变、越界只警告、Preview/Sheet/PNG逐像素验证。
+- 新增模型/管线/真实Qt回归，以及真实视频抠像→参考校准→Run序列→预览导出→保存重开完整验收。
+- 发布构建包含125%/150%冻结EXE验收，窗口显示构建标识；最终发布路径与证据见VALIDATION.md。
+
+下一阶段（仅规划）：Project Animation Library：Project→Character→Animation Group→Animation；Character Templates、Animation Set及JumpUp/FallLoop/Land；Ctrl+A Create、Tree Drag & Drop、Loose Animations、Character/Enemy/Boss分类。本轮没有提前实现这些目录/模板功能。
+
+## Completed — 编辑器重构
+
+- 五页工作流、统一编辑页及 Root/Motion/Align 折叠侧栏已完成；保留视频/序列直通、项目中心画布与旧工程行为。
+- 非破坏性实例、四轨、显示/锁定、单/Ctrl/Shift/框选、拖动重排/换轨、删除、复制/指定位置粘贴/末尾粘贴、倒放完成。
+- 单帧拖动/方向键/Shift、数值和批量 XY、比例/透明度、关键帧及分段变换插值完成。
+- 目标帧数、速度倍率、目标时长、区段重定时、四种预设曲线和可拖动/输入的 Bezier、首尾/标记关键帧保护完成。
+- 同页 QTimer 播放、洋葱皮/残影、坐标轴、安全区、Root 路径辅助完成；未重新构建时仍可从源帧列表修正 Root。
+- 全操作 Undo/Redo、每动画编辑数据保存、独立最终缓存和 Preview/Export 像素一致性完成。
+- UI 提高背景/文本/输入框对比，修复属性横向溢出和轨道锁定列，移除重复的大页面工具栏。
+- 全量及原生/冻结发布验收结果以 VALIDATION.md 为准；发布需同步日常 EXE 入口。
+
+后续可选：跨动画素材拖入轨道、真正的嵌套序列块、自动识别大动作关键帧、持久化撤销历史、项目最近列表；当前帧资源来自本动画，参考轨不导出。
 
 ## V0.4 项目标准画布
 

@@ -76,3 +76,7 @@ scripts/smoke_workspace.py
 tests/{test_sequence_bit_depth,test_project_workspace,test_workspace_ui}.py
 V04_WORKSPACE_PLAN.md
 ```
+
+编辑器新增：models/timeline_edit.py、core/timeline_renderer.py、ui/frame_editor.py、ui/editor_timeline.py、ui/editor_canvas.py、ui/curve_editor.py；tests/test_editor_pipeline.py、tests/test_editor_ui.py；app/editor_smoke.py。
+
+Path Memory计划新增utils/app_settings.py、utils/path_memory.py；复用ui/dialogs.py与folder_picker.py，UI_AUDIT.md记录全部调用与按钮审查。

@@ -28,7 +28,7 @@ class StartPage(QWidget):
 
     def update_project(self, project, opened):
         self.title.setText(t("Project created") if opened else t("AI VIDEO  /  SPRITE"))
-        self.hint.setText(t("Import Idle first to establish the character coordinate reference.") if not project.character_profile else t("Character Profile: locked"))
+        self.hint.setText(t("Import Idle first to establish the character coordinate reference.") if not (project.character_profile or project.character_reference) else t("Character Coordinate System: Locked" if project.character_reference else "Character Profile: locked"))
         self.buttons[0].setVisible(not opened)
         self.buttons[1].setVisible(not opened)
         self.buttons[2].setVisible(opened)

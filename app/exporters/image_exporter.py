@@ -30,7 +30,7 @@ def export_images(pipeline: Pipeline, destination: Path, kind="all", godot=False
         pipeline.ensure_key()
     else:
         pipeline.build()
-        provider = FinalFrameProvider(pipeline.project, pipeline.cache_dir, pipeline.align_signature())
+        provider = FinalFrameProvider(pipeline.project, pipeline.cache_dir, pipeline.final_signature())
         if pipeline.project.layout.clipped_frames and not allow_clipping:
             indices = ", ".join(str(i) for i in pipeline.project.layout.clipped_frames)
             raise ValueError(f"FRAME CLIPPING DETECTED: {indices}. Use AUTO / a larger cell or explicitly accept clipping.")
@@ -39,7 +39,7 @@ def export_images(pipeline: Pipeline, destination: Path, kind="all", godot=False
     try:
         if kind in ("all", "sheet"):
             copy_file(pipeline.sheet, staging / "sprite_sheet.png", pipeline.cancel)
-        count = pipeline.project.video.frame_count
+        count = pipeline.project.video.frame_count if kind == "rgba" else len(provider)
         if kind in ("all", "frames", "rgba"):
             directory = staging / ("frames_rgba" if kind == "rgba" else "frames")
             directory.mkdir()

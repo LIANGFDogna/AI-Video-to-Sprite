@@ -27,10 +27,8 @@ class TranslationManager:
     def save_language(self, language):
         if language not in LANGUAGES:
             raise ValueError("Unsupported language")
-        self.settings_path.parent.mkdir(parents=True, exist_ok=True)
-        temp = self.settings_path.with_suffix(".tmp")
-        temp.write_text(json.dumps({"language": language}, ensure_ascii=False, indent=2), encoding="utf-8")
-        temp.replace(self.settings_path)
+        from app.utils.app_settings import AppSettings
+        AppSettings(self.settings_path).update({"language":language})
 
     def set_language(self, language, persist=False):
         if language not in LANGUAGES:
