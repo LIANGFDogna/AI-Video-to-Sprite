@@ -11,7 +11,7 @@ import re
 import cv2
 import numpy as np
 from PIL import Image
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (QCheckBox, QColorDialog, QComboBox, QDialog, QFileDialog,
     QHBoxLayout, QLabel, QMainWindow, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
@@ -349,8 +349,34 @@ class MainWindow(QMainWindow):
         p = asdict(self.project)
         keys = ('timeline_edit','root_keyframes','motion_settings','tracking_settings','alignment_mode','sprite_cell',
                 'scale','character_profile','processing_mode','full_processing_canvas_mode','passthrough_alignment',
-                'chroma_key_settings','sequence_fps','export_settings','character_reference','animation_transform')
+                'chroma_key_settings','sequence_fps','export_settings','character_reference','animation_transform','frame_corrections')
         return {k:p[k] for k in keys}
+
+    def add_frame_correction(self,indices,dx,dy):
+        "One drag or nudge becomes exactly one undo command."
+        p=self.project;dx,dy=int(round(dx)),int(round(dy))
+        if (not dx and not dy) or not indices:return
+        before=self._edit_snapshot()
+        for index in list(indices):
+            x,y=p.frame_correction(index);p.set_frame_correction(index,x+dx,y+dy)
+        if before==self._edit_snapshot():return
+        self._history().record(before,self._edit_snapshot(),'Frame Correction')
+        self.dirty=True;self.built=False;self._invalidate_reviews();self._refresh_editor();self._update_state()
+
+    def reset_frame_corrections(self,indices):
+        if not indices:return
+        before=self._edit_snapshot()
+        self.project.clear_frame_corrections(list(indices))
+        if before==self._edit_snapshot():return
+        self._history().record(before,self._edit_snapshot(),'Reset Frame Correction')
+        self.dirty=True;self.built=False;self._invalidate_reviews();self._refresh_editor();self._update_state()
+
+    def _cancel_editor_interaction(self):
+        if hasattr(self,'editor'):self.editor.cancel_active_interaction()
+
+    def changeEvent(self,event):
+        if hasattr(self,'editor') and event.type()==QEvent.Type.WindowStateChange:self.editor.cancel_active_interaction()
+        super().changeEvent(event)
 
     def _sync_character_owner(self,value):
         "Undo/redo of an animation must not revert another Animation Reference; keep the owner in step."
@@ -1096,6 +1122,7 @@ class MainWindow(QMainWindow):
 
     def _stage_changed(self, index):
         if not hasattr(self, 'editor'): return
+        self._cancel_editor_interaction()
         if hasattr(self,"library_controller"):self.library_controller.asset_id=None
         editing = index == 2
         self.view_toolbar_widget.setVisible(not editing)
@@ -1655,6 +1682,7 @@ class MainWindow(QMainWindow):
         self._update_state()
 
     def _project_created(self, project, path):
+        self._cancel_editor_interaction()
         self._invalidate_reviews(False)
         self.project, self.project_file = project, path
         self.cache_dir = cache_directory(project.project_id, path, project.animation_id)
@@ -1727,6 +1755,7 @@ class MainWindow(QMainWindow):
         except Exception as error:
             self._failed(str(error))
             return
+        self._cancel_editor_interaction()
         self.editor.pause_preview();self._invalidate_reviews(False)
         self.project,self.project_file=project,path
         self.cache_dir=cache_directory(project.project_id,path,project.animation_id)

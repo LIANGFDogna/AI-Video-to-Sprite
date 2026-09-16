@@ -853,5 +853,16 @@
   "Remove this Sprite Sheet from the project?": "从项目中移除此 Sprite Sheet？",
   "The animation is the current Character Reference. Clear the Character Reference and remove it?": "该动画正在作为角色坐标基准。清除角色基准并移除？",
   "The resource could not be found on disk.": "在磁盘上找不到该资源。",
-  "Resource removed from the project: {name}": "已从项目中移除资源：{name}"
+  "Resource removed from the project: {name}": "已从项目中移除资源：{name}",
+  "Arrow keys nudge the current frame (or every selected frame).": "方向键微调当前帧（或所有选中帧）。",
+  "Arrow keys nudge the whole Animation (scaled to the project canvas).": "方向键微调整段动画（按项目画布比例）。",
+  "Current Frame": "当前帧",
+  "Ghost is hidden while editing the Reference Animation.": "编辑基准动画时隐藏 Ghost。",
+  "Invalid frame correction": "逐帧修正数据无效",
+  "Position Editing": "位置编辑",
+  "Reference Ghost": "基准 Ghost",
+  "This Character has no Character Reference yet.": "此角色尚未设置坐标基准。",
+  "Whole Animation": "整个动画",
+  "Reset Current Frame": "重置当前帧",
+  "Reset Selected Frames": "重置选中帧"
 }

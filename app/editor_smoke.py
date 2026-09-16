@@ -101,7 +101,7 @@ def start_editor_smoke(app,window,output):
                     QTest.mousePress(e.canvas.viewport(),Qt.MouseButton.LeftButton,pos=start)
                     QTest.mouseMove(e.canvas.viewport(),end)
                     QTest.mouseRelease(e.canvas.viewport(),Qt.MouseButton.LeftButton,pos=end)
-                    assert p.timeline_edit.frame_overrides[state['original_ids'][12]].offset_x==-6
+                    assert p.frame_correction(12)==(-6,14),'canvas drag in Current Frame mode writes a per-frame correction' 
                     e.timeline.select_ids([state['original_ids'][13]])
                     e.transform_group.setChecked(True);e.x.setValue(-3);e.y.setValue(8);e.apply_transform()
                     e.timeline.select_ids(state['original_ids'][3:6]);e.action('delete')

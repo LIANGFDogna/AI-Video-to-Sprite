@@ -136,6 +136,7 @@ class Project:
     original_size: tuple[int, int] = (0, 0)
     character_reference: CharacterReference | None = None
     animation_transform: AnimationTransform = field(default_factory=AnimationTransform)
+    frame_corrections: dict[int, tuple[int, int]] = field(default_factory=dict)
     timeline_edit: TimelineEdit = field(default_factory=TimelineEdit)
     final_frames: list[FrameData] = field(default_factory=list)
     final_timing: list[dict] = field(default_factory=list)
@@ -145,7 +146,28 @@ class Project:
 
     @property
     def has_final_edits(self):
-        return self.timeline_edit.enabled or self.animation_transform.active
+        return self.timeline_edit.enabled or self.animation_transform.active or bool(self.frame_corrections)
+
+    def frame_correction(self, index):
+        "Per-frame alignment offset in project canvas pixels; (0,0) when unset."
+        value = self.frame_corrections.get(int(index))
+        return (int(value[0]), int(value[1])) if value else (0, 0)
+
+    def set_frame_correction(self, index, x, y):
+        index, x, y = int(index), int(round(x)), int(round(y))
+        if x == 0 and y == 0:
+            self.frame_corrections.pop(index, None)
+        else:
+            self.frame_corrections[index] = (x, y)
+        return self.frame_correction(index)
+
+    def clear_frame_corrections(self, indices=None):
+        if indices is None:
+            self.frame_corrections.clear()
+        else:
+            for index in indices:
+                self.frame_corrections.pop(int(index), None)
+        return self.frame_corrections
 
     @property
     def output_frames(self):
@@ -209,6 +231,11 @@ class Project:
             raise ValueError("Selected Character does not exist")
         self.timeline_edit.validate(self.video.frame_count)
         AnimationTransform.from_dict(self.animation_transform)
+        for index, value in self.frame_corrections.items():
+            if not isinstance(index, int) or index < 0 or len(value) != 2:
+                raise ValueError("Invalid frame correction")
+            if any(not isinstance(v, int) or abs(v) > 32768 for v in value):
+                raise ValueError("Invalid frame correction")
         if self.character_reference:self.character_reference.validate()
         if self.canvas_fit_mode not in ("none", "center_crop_or_pad"):
             raise ValueError("Invalid project canvas fit mode")
@@ -358,6 +385,8 @@ class Project:
         data["timeline_edit"] = TimelineEdit.from_dict(data.get("timeline_edit"))
         data["character_reference"] = CharacterReference.from_dict(data.get("character_reference"))
         data["animation_transform"] = AnimationTransform.from_dict(data.get("animation_transform"))
+        data["frame_corrections"] = {int(k): (int(v[0]), int(v[1]))
+            for k, v in (data.get("frame_corrections") or {}).items() if int(v[0]) or int(v[1])}
         data["layout"] = CellLayout(**data["layout"]) if data.get("layout") else None
         data["character_profile"] = CharacterProfile.from_dict(data["character_profile"]) if data.get("character_profile") else None
         project = cls(**data)

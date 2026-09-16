@@ -8,6 +8,7 @@ from app.core.alpha_utils import alpha_bbox
 from app.models.frame_data import FrameData
 from app.models.timeline_edit import FrameOverride, TimelineFrame
 from app.core.animation_transform import apply_animation_transform
+from app.core.frame_correction import apply_frame_correction
 
 
 def compile_timeline(edit):
@@ -103,6 +104,8 @@ def render_timeline_frame(project, timing, read_base, index=0, read_keyed=None):
     pixels = composite_rgba(layers, (layout.height, layout.width, 4))
     frame = primary or FrameData(index, tracking_method='empty')
     frame.index = index
-    frame.cell_bbox = alpha_bbox(pixels, 0, 0)
     frame.warnings = list(dict.fromkeys([*frame.warnings, *warnings]))
+    # Final XY = Canvas Normalized XY + Animation Transform + Frame Correction.
+    pixels, frame = apply_frame_correction(project, pixels, frame, index)
+    frame.cell_bbox = alpha_bbox(pixels, 0, 0)
     return pixels, frame

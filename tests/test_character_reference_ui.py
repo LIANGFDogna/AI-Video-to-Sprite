@@ -53,7 +53,9 @@ def test_fixed_idle_axis_drag_keyboard_cancel_and_locked_save(qt,reference_pipe)
         assert w.project.character_reference==draft and draft.locked
         assert e.drag_scope.currentData()=='animation'
         assert np.array_equal(e.provider.get_final_frame(0),before)
-        assert np.array_equal(e.canvas.ghost_pixels,before)
+        # Phase 2C rule: the Reference Animation itself never shows its own Ghost.
+        assert e.canvas.ghost_pixels is None and not e.show_idle_ghost.isEnabled()
+        assert not e.show_idle_ghost.isChecked()
         w.open_character_reference();events(qt,lambda:w.reference_dialog is not None and not w.worker)
         w.reference_dialog.x.setValue(10);w.reference_dialog.reject();events(qt,lambda:w.reference_dialog is None)
         assert w.project.character_reference==draft
@@ -65,7 +67,9 @@ def test_locked_axes_animation_drag_ghost_undo_export_and_save(qt,reference_pipe
     try:
         w.open_character_reference();events(qt,lambda:w.reference_dialog is not None and not w.worker)
         w.reference_dialog.save_button.click();events(qt,lambda:w.reference_dialog is None);settle(qt,w)
-        e=w.editor;reference=w.project.character_reference;ghost=e.canvas.ghost_pixels.copy()
+        e=w.editor;reference=w.project.character_reference
+        # Phase 2C rule: the Reference Animation hides its own Ghost.
+        assert e.canvas.ghost_pixels is None and not e.show_idle_ghost.isEnabled()
         before=read_rgba(frame_path(reference_pipe.keyed,0)).copy()
         # Ordinary dragging at the axis intersection changes animation offset, never the axes.
         e.canvas.actual_size()
@@ -79,7 +83,8 @@ def test_locked_axes_animation_drag_ghost_undo_export_and_save(qt,reference_pipe
         assert w.project.animation_transform==AnimationTransform(-12,4)
         assert w.project.character_reference==reference
         assert not w.project.timeline_edit.frame_overrides
-        assert np.array_equal(e.canvas.ghost_pixels,ghost)
+        # The Reference Animation keeps its own Ghost hidden through the whole drag.
+        assert e.canvas.ghost_pixels is None and e.canvas.idle_ghost_item.pos()==QPointF(0,0)
         for i in range(4):
             frame=e.provider.get_final_frame(i)
             assert tuple(frame[34,16+i])==(220,70,130,191)

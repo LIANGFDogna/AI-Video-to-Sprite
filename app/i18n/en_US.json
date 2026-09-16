@@ -853,5 +853,16 @@
   "Remove this Sprite Sheet from the project?": "Remove this Sprite Sheet from the project?",
   "The animation is the current Character Reference. Clear the Character Reference and remove it?": "The animation is the current Character Reference. Clear the Character Reference and remove it?",
   "The resource could not be found on disk.": "The resource could not be found on disk.",
-  "Resource removed from the project: {name}": "Resource removed from the project: {name}"
+  "Resource removed from the project: {name}": "Resource removed from the project: {name}",
+  "Arrow keys nudge the current frame (or every selected frame).": "Arrow keys nudge the current frame (or every selected frame).",
+  "Arrow keys nudge the whole Animation (scaled to the project canvas).": "Arrow keys nudge the whole Animation (scaled to the project canvas).",
+  "Current Frame": "Current Frame",
+  "Ghost is hidden while editing the Reference Animation.": "Ghost is hidden while editing the Reference Animation.",
+  "Invalid frame correction": "Invalid frame correction",
+  "Position Editing": "Position Editing",
+  "Reference Ghost": "Reference Ghost",
+  "This Character has no Character Reference yet.": "This Character has no Character Reference yet.",
+  "Whole Animation": "Whole Animation",
+  "Reset Current Frame": "Reset Current Frame",
+  "Reset Selected Frames": "Reset Selected Frames"
 }

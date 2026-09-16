@@ -17,7 +17,8 @@ class EditorTimeline(QGraphicsView):
         super().__init__(parent)
         self.setScene(QGraphicsScene(self))
         self.setMinimumHeight(195)
-        self.setDragMode(self.DragMode.RubberBandDrag)
+        # Selection uses one lightweight rectangle item; never Qt's pixmap rubber band.
+        self.setDragMode(self.DragMode.NoDrag)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
@@ -29,6 +30,8 @@ class EditorTimeline(QGraphicsView):
         self.drag = None
         self.scrubbing = False
         self.rebuilding = False
+        self.selecting = None
+        self.rubber = None
         self.scene().selectionChanged.connect(self._selection)
 
     def ids(self):
@@ -38,6 +41,8 @@ class EditorTimeline(QGraphicsView):
         self.rebuilding = True
         selected = set(self.ids() if selected is None else selected)
         self.edit, self.fps = edit, fps or 24
+        self.rubber = None
+        self.selecting = None
         self.scene().clear()
         self.items_by_id.clear()
         width = max(self.viewport().width()-5, (edit.duration+1)*self.pixels_per_second)
@@ -67,6 +72,51 @@ class EditorTimeline(QGraphicsView):
                     text.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
         self.rebuilding = False
         self.viewport().update()
+
+    def _clear_selection_overlay(self):
+        if self.rubber is not None:
+            if self.rubber.scene() is self.scene():
+                self.scene().removeItem(self.rubber)
+            self.rubber = None
+        self.selecting = None
+        self.viewport().update()
+
+    def _start_selection(self, position):
+        self.selecting = position
+        if self.rubber is None:
+            self.rubber = QGraphicsRectItem(QRectF(position, position))
+            self.rubber.setPen(QPen(QColor('#8fd3ff'), 1, Qt.PenStyle.DashLine))
+            self.rubber.setBrush(QBrush(QColor(143, 211, 255, 40)))
+            self.rubber.setZValue(50)
+            self.rubber.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+            self.scene().addItem(self.rubber)
+        else:
+            self.rubber.setRect(QRectF(position, position))
+            self.rubber.setVisible(True)
+
+    def _update_selection(self, position):
+        if self.rubber is not None and self.selecting is not None:
+            self.rubber.setRect(QRectF(self.selecting, position).normalized())
+
+    def _finish_selection(self, position):
+        rect = QRectF(self.selecting, position).normalized() if self.selecting is not None else None
+        self._clear_selection_overlay()
+        if rect is None:
+            return []
+        ids = [ident for ident, item in self.items_by_id.items() if item.mapRectToScene(item.rect()).intersects(rect)]
+        self.select_ids(ids)
+        return ids
+
+    def cancel_active_interaction(self):
+        "Remove the selection overlay and any uncommitted block drag."
+        changed = self.selecting is not None or self.rubber is not None or self.drag is not None or self.scrubbing
+        if self.drag:
+            self.drag = None
+            for item in self.items_by_id.values():
+                item.setPos(0, 0)
+        self._clear_selection_overlay()
+        self.scrubbing = False
+        return changed
 
     def _selection(self):
         if not self.rebuilding:
@@ -116,12 +166,17 @@ class EditorTimeline(QGraphicsView):
             if selected and not any(t.locked and any(f.track_id == t.id for f in selected) for t in self.edit.track_layout):
                 self.drag = (pos, min(f.start for f in selected), frame.track_id, False)
             event.accept()
+        elif event.button() == Qt.MouseButton.LeftButton:
+            self._start_selection(pos)
+            event.accept()
         else: super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
         pos = self.mapToScene(event.position().toPoint())
         if self.scrubbing:
             self.time_selected.emit(max(0.,(pos.x()-self.label_width)/self.pixels_per_second)); return
+        if self.selecting is not None:
+            self._update_selection(pos); return
         if self.drag:
             origin, start, track, moved = self.drag
             delta = pos-origin
@@ -132,6 +187,9 @@ class EditorTimeline(QGraphicsView):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        if self.selecting is not None:
+            self._finish_selection(self.mapToScene(event.position().toPoint()))
+            event.accept(); return
         if self.drag:
             origin, start, track, moved = self.drag
             self.drag = None
@@ -156,8 +214,15 @@ class EditorTimeline(QGraphicsView):
             bar=self.horizontalScrollBar();bar.setValue(bar.value()-event.angleDelta().y());event.accept()
         else: super().wheelEvent(event)
 
+    def focusOutEvent(self, event):
+        self.cancel_active_interaction()
+        super().focusOutEvent(event)
+
     def keyPressEvent(self, event):
         key, mods = event.key(), event.modifiers()
+        if key == Qt.Key.Key_Escape:
+            self.cancel_active_interaction()
+            event.accept(); return
         if key == Qt.Key.Key_Delete: self.action.emit('delete')
         elif mods & Qt.KeyboardModifier.ControlModifier and key in (Qt.Key.Key_A,Qt.Key.Key_C,Qt.Key.Key_V):
             self.action.emit({Qt.Key.Key_A:'select_all',Qt.Key.Key_C:'copy',Qt.Key.Key_V:'paste'}[key])

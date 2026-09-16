@@ -57,10 +57,19 @@ def test_canvas_drag_nudge_multi_delete_and_root_undo(qt,editor_pipe,tmp_path):
         QTest.mouseMove(canvas.viewport(),end)
         QTest.mouseRelease(canvas.viewport(),Qt.MouseButton.LeftButton,pos=end)
         settle(qt,w)
-        value=w.project.timeline_edit.frame_overrides[ids[12]]
-        assert (value.offset_x,value.offset_y)==(3,-4)
+        # Phase 2C contract: canvas drag edits the Current Frame correction, never timeline overrides.
+        assert w.project.frame_correction(12)==(3,-4)
+        assert w.project.frame_correction(11)==(0,0) and w.project.frame_correction(13)==(0,0)
+        assert not w.project.animation_transform.active
+        assert not w.project.timeline_edit.frame_overrides
+        moved=FinalFrameProvider(w.project,w.cache_dir,live_edit=True).get_final_frame(12).copy()
+        w.undo_edit();settle(qt,w)
+        assert w.project.frame_correction(12)==(0,0)
+        w.redo_edit();settle(qt,w)
+        assert w.project.frame_correction(12)==(3,-4)
+        assert np.array_equal(FinalFrameProvider(w.project,w.cache_dir,live_edit=True).get_final_frame(12),moved)
         QTest.keyClick(canvas,Qt.Key.Key_Right,Qt.KeyboardModifier.ShiftModifier);settle(qt,w)
-        assert w.project.timeline_edit.frame_overrides[ids[12]].offset_x==13
+        assert w.project.frame_correction(12)==(13,-4)
         e.timeline.select_ids(ids[2:5]);e.action('delete');settle(qt,w)
         assert len(e.provider)==36
         QTest.keyClick(e.timeline,Qt.Key.Key_Z,Qt.KeyboardModifier.ControlModifier);settle(qt,w)

@@ -7,7 +7,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QPushButton,
     QSplitter, QStackedWidget, QTabWidget, QScrollArea, QListWidget, QTreeWidget, QTreeWidgetItem,
-    QComboBox, QDoubleSpinBox, QSpinBox, QCheckBox, QGroupBox, QGridLayout, QHeaderView)
+    QComboBox, QDoubleSpinBox, QSpinBox, QCheckBox, QGroupBox, QRadioButton, QGridLayout, QHeaderView)
 from app.i18n import t, translate_error
 from app.models.timeline_edit import FrameOverride, TimelineFrame
 from app.core.final_frame_provider import FinalFrameProvider
@@ -19,6 +19,22 @@ from app.ui.editor_timeline import EditorTimeline
 from app.ui.curve_editor import CurveEditor
 from app.ui.worker import Worker
 from app.utils.paths import frame_path
+
+
+class _PositionScope:
+    """Compatibility view of the radio pair: index 0 = Animation Transform, 1 = Current Frame."""
+
+    def __init__(self,editor):
+        self.editor=editor
+
+    def currentData(self):
+        return self.editor.target_mode()
+
+    def currentIndex(self):
+        return 0 if self.editor.target_mode()=='animation' else 1
+
+    def setCurrentIndex(self,index):
+        (self.editor.position_animation if index==0 else self.editor.position_frame).setChecked(True)
 
 
 class FrameEditor(QWidget):
@@ -92,6 +108,7 @@ class FrameEditor(QWidget):
         self.canvas_stack.addWidget(self.canvas)
         self.canvas_stack.addWidget(self.alignment_view)
         self.canvas.moved.connect(self.move_content)
+        self.canvas.interaction_cancelled.connect(lambda:self.request_preview())
         self.alignment_view.root_selected.connect(host._set_root)
         self.alignment_view.roi_selected.connect(host._set_roi)
         mid.addWidget(self.canvas_stack,1)
@@ -135,9 +152,22 @@ class FrameEditor(QWidget):
         self.property_layout.addLayout(form)
         self.reference_status=QLabel();self.reference_status.setWordWrap(True);form.addRow(self.reference_status)
         self.reference_button=self.button('Set Character Reference',host.open_character_reference,True);form.addRow(self.reference_button)
-        self.drag_scope=QComboBox()
-        self.drag_scope.addItem(t('Animation Offset'),'animation');self.drag_scope.addItem(t('Existing Per-Frame Edit'),'frame');self.drag_scope.setCurrentIndex(1)
-        self.drag_scope.currentIndexChanged.connect(self._drag_scope_changed);form.addRow(t('Drag Target'),self.drag_scope)
+        self.position_group=QGroupBox(t('Position Editing'))
+        position_layout=QVBoxLayout(self.position_group)
+        self.position_animation=QRadioButton(t('Whole Animation'))
+        self.position_frame=QRadioButton(t('Current Frame'))
+        self.position_frame.setChecked(True)
+        for button in (self.position_animation,self.position_frame):
+            position_layout.addWidget(button);button.toggled.connect(self._position_changed)
+        reset_row=QHBoxLayout()
+        for label,callback in (('Reset Current Frame',lambda:self.reset_correction('current')),
+                               ('Reset Selected Frames',lambda:self.reset_correction('selected'))):
+            reset_row.addWidget(self.button(label,callback))
+        position_layout.addLayout(reset_row)
+        self.position_hint=QLabel();self.position_hint.setObjectName('muted');self.position_hint.setWordWrap(True)
+        position_layout.addWidget(self.position_hint)
+        form.addRow(self.position_group)
+        self.drag_scope=_PositionScope(self)
         self.reference_group=QGroupBox(t('Character Reference / Animation Offset'))
         self.reference_group.setCheckable(True);self.reference_group.setChecked(False)
         reference_layout=QVBoxLayout(self.reference_group);reference_body=QWidget();reference_form=QFormLayout(reference_body)
@@ -146,10 +176,13 @@ class FrameEditor(QWidget):
         self.show_reference=QCheckBox(t('Show Character Reference'));self.show_reference.setChecked(True)
         self.show_reference_ground=QCheckBox(t('Show Ground'));self.show_reference_ground.setChecked(True)
         self.show_reference_axes=QCheckBox(t('Show XY Axis'));self.show_reference_axes.setChecked(True)
-        self.show_idle_ghost=QCheckBox(t('Show Idle Ghost'));self.show_idle_ghost.setChecked(True)
+        self.show_idle_ghost=QCheckBox(t('Reference Ghost'));self.show_idle_ghost.setChecked(True)
+        self._ghost_override=False
         for control in (self.show_reference,self.show_reference_ground,self.show_reference_axes,self.show_idle_ghost):
             reference_form.addRow(control);control.toggled.connect(self.request_preview)
-        self.reference_opacity=self.decimal(0,1,.35);reference_form.addRow(t('Reference Opacity'),self.reference_opacity);self.reference_opacity.valueChanged.connect(self.request_preview)
+        self.show_idle_ghost.toggled.connect(self._ghost_toggled)
+        self.reference_opacity=self.decimal(0,.7,.15);reference_form.addRow(t('Ghost Opacity'),self.reference_opacity);self.reference_opacity.valueChanged.connect(self.request_preview)
+        self.ghost_hint=QLabel();self.ghost_hint.setObjectName('muted');self.ghost_hint.setWordWrap(True);reference_form.addRow(self.ghost_hint)
         self.animation_x=self.decimal(-32768,32768);self.animation_y=self.decimal(-32768,32768)
         for control in (self.animation_x,self.animation_y):control.setDecimals(0)
         reference_form.addRow(t('Animation Offset X (project px)'),self.animation_x);reference_form.addRow(t('Animation Offset Y (project px)'),self.animation_y)
@@ -306,12 +339,13 @@ class FrameEditor(QWidget):
         self.reference_button.setEnabled(self.host.keyed_ready)
         if reference:
             self.reference_status.setText(self.reference_status.text()+"\n"+t('Origin ({x:.0f}, {y:.0f})',x=reference.origin_x,y=reference.ground_y))
-        if reference and not self._has_reference:self.drag_scope.setCurrentIndex(0);self.reference_group.setChecked(True)
+        if reference and not self._has_reference:self.position_animation.setChecked(True);self.reference_group.setChecked(True)
         self._has_reference=bool(reference)
-        self._drag_scope_changed()
+        self._position_changed();self._sync_ghost()
         for field,value in ((self.animation_x,p.animation_transform.offset_x),(self.animation_y,p.animation_transform.offset_y)):
             field.blockSignals(True);field.setValue(value);field.blockSignals(False)
-        for control in (self.show_reference,self.show_reference_ground,self.show_reference_axes,self.show_idle_ghost,self.reference_opacity):control.setEnabled(bool(reference))
+        # The Ghost checkbox is owned by _sync_ghost(); the other reference controls follow the Reference.
+        for control in (self.show_reference,self.show_reference_ground,self.show_reference_axes,self.reference_opacity):control.setEnabled(bool(reference))
         self.timeline.set_edit(e,p.video.fps,self.selected_ids)
         self.clip_selector.blockSignals(True);self.clip_selector.clear()
         for row in p.library.in_group(p.current_group_id,kinds={'ANIMATION'}):
@@ -355,16 +389,64 @@ class FrameEditor(QWidget):
             for control,v in ((self.x,value.offset_x),(self.y,value.offset_y),(self.scale_value,value.scale),(self.opacity,value.opacity)):
                 control.blockSignals(True);control.setValue(v);control.blockSignals(False)
 
-    def _drag_scope_changed(self):
+    def target_mode(self):
+        return 'animation' if self.position_animation.isChecked() else 'frame'
+
+    def _position_changed(self,*args):
         layout=self.host.project.layout
-        self.canvas.key_step_scale=layout.normalize_scale if layout and self.drag_scope.currentData()=='animation' else (1.,1.)
+        animation=self.target_mode()=='animation'
+        self.canvas.key_step_scale=layout.normalize_scale if layout and animation else (1.,1.)
+        self.position_hint.setText(t('Arrow keys nudge the whole Animation (scaled to the project canvas).') if animation
+            else t('Arrow keys nudge the current frame (or every selected frame).'))
+
+    def correction_frames(self):
+        "Output frame indices that the frame-correction drag or reset applies to."
+        selected=set(self.selected_ids)
+        if not selected:return [self.index]
+        from app.core.timeline_renderer import compile_final_timing
+        timing=compile_final_timing(self.host.project)
+        result=[index for index,row in enumerate(timing) if any(layer in selected for layer in row['layers'])]
+        return result or [self.index]
 
     def move_content(self,x,y):
-        if self.drag_scope.currentData()=='animation':
+        if self.target_mode()=='animation':
             if not self.host.project.layout:return
             sx,sy=self.host.project.layout.normalize_scale
             self.host.set_animation_offset(round(x/sx),round(y/sy),relative=True)
-        else:self.command('Offset Frames',lambda e:e.offset(self.selection(),x,y))
+        else:
+            self.host.add_frame_correction(self.correction_frames(),x,y)
+
+    def reset_correction(self,scope):
+        indices=self.correction_frames() if scope=='selected' else [self.index]
+        self.host.reset_frame_corrections(indices)
+
+    def cancel_active_interaction(self):
+        "Called on every context switch so a half-finished drag can never reach another Animation."
+        self.canvas.cancel_active_interaction()
+        self.timeline.cancel_active_interaction()
+        self.canvas.drag_start=None;self.canvas.dragging=False
+        return True
+
+    def _ghost_toggled(self,checked):
+        "A real user toggle wins over the automatic default for this Animation."
+        if self.show_idle_ghost.isEnabled():self._ghost_override=True
+
+    def _sync_ghost(self,*args):
+        "Ghost shows the reference of the active Character, or the legacy project-level reference."
+        project=self.host.project
+        character=project.active_character()
+        reference=character.character_reference if character is not None else project.character_reference
+        editing=bool(reference and reference.reference_animation_id==project.animation_id)
+        if reference is None:
+            self.show_idle_ghost.setChecked(False);self.show_idle_ghost.setEnabled(False)
+            self.ghost_hint.setText(t('This Character has no Character Reference yet.'))
+        elif editing:
+            self.show_idle_ghost.setChecked(False);self.show_idle_ghost.setEnabled(False)
+            self.ghost_hint.setText(t('Ghost is hidden while editing the Reference Animation.'))
+        else:
+            self.show_idle_ghost.setEnabled(True)
+            if not self._ghost_override:self.show_idle_ghost.setChecked(True)
+            self.ghost_hint.setText('')
 
     def command(self,label,fn):
         if self.host.interaction_busy:return
@@ -496,7 +578,10 @@ class FrameEditor(QWidget):
         self.debounce.start(0 if self.timer.isActive() else 25)
 
     def _start_preview(self):
-        if self.worker or self.host.current_animation_busy or not self.provider or not len(self.provider):return
+        if self.worker or self.host.current_animation_busy or not self.provider or not len(self.provider):
+            self.pending=False
+            return
+        if self.canvas.drag_start is not None:return
         self.pending=False
         provider=self.provider;index=self.index;revision=self.revision
         onion=self.onion.isChecked();ghost=self.ghost.isChecked();count=self.neighbors.value();opacity=self.ghost_opacity.value()

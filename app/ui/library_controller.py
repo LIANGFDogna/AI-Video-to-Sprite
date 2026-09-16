@@ -64,7 +64,8 @@ class LibraryController(QObject):
             timeline_scroll_x=e.timeline.horizontalScrollBar().value(),timeline_scroll_y=e.timeline.verticalScrollBar().value(),
             editor_tab=e.inspector.currentIndex(),page=h.steps.currentIndex(),preview_mode=h.preview_mode.currentData(),
             preview_fps=e.preview_fps.value(),loop=e.loop.isChecked(),onion=e.onion.isChecked(),ghost=e.ghost.isChecked(),
-            neighbors=e.neighbors.value(),ghost_opacity=e.ghost_opacity.value(),playing=e.timer.isActive(),selected_frames=list(e.selected_ids))
+            neighbors=e.neighbors.value(),ghost_opacity=e.ghost_opacity.value(),playing=e.timer.isActive(),selected_frames=list(e.selected_ids),
+            reference_ghost=e.show_idle_ghost.isChecked(),reference_ghost_opacity=e.reference_opacity.value())
         g.ui_state=state
         if state.animation_id:g.animation_states[state.animation_id]=copy.deepcopy(state)
 
@@ -82,6 +83,7 @@ class LibraryController(QObject):
         h=self.host
         if self.restoring or (h.interaction_busy and not getattr(h,'task_context',None)):return
         if ident is not None and ident not in h.project.library.groups:return
+        h.editor.cancel_active_interaction()
         if capture:self.capture()
         p=h.project;g=p.library.groups.get(ident)
         state=copy.deepcopy(g.animation_states.get(animation_id,g.ui_state) if animation_id else g.ui_state) if g else WorkspaceState()
@@ -111,7 +113,14 @@ class LibraryController(QObject):
                         size=image.size;image.thumbnail((1280,1280));pixels=np.array(image.convert('RGBA'));factor=image.width/size[0]
                 h.sprite_view.project=p;h.sprite_view.set_image(pixels,factor)
             h.steps.setCurrentIndex(state.page if p.source_path else 0);h._stage_changed(h.steps.currentIndex())
-            e=h.editor;e.bind();e.inspector.setCurrentIndex(state.editor_tab)
+            e=h.editor
+            if hasattr(e,'show_idle_ghost'):
+                e.show_idle_ghost.blockSignals(True)
+                e.show_idle_ghost.setChecked(True if state.reference_ghost is None else bool(state.reference_ghost))
+                e.show_idle_ghost.blockSignals(False)
+                e.reference_opacity.setValue(min(.7,max(0.,state.reference_ghost_opacity)))
+                e._ghost_override=state.reference_ghost is not None
+            e.bind();e.inspector.setCurrentIndex(state.editor_tab)
             h.preview_mode.setCurrentIndex(max(0,h.preview_mode.findData(state.preview_mode)))
             for control,value in ((e.preview_fps,state.preview_fps),(e.neighbors,state.neighbors),(e.ghost_opacity,state.ghost_opacity)):control.setValue(value)
             for control,value in ((e.loop,state.loop),(e.onion,state.onion),(e.ghost,state.ghost)):control.setChecked(value)
@@ -242,6 +251,7 @@ class LibraryController(QObject):
         h=self.host
         if self.restoring or (h.interaction_busy and not getattr(h,'task_context',None)):return
         if ident is not None and ident not in h.project.library.characters:return
+        h.editor.cancel_active_interaction()
         if capture:self.capture()
         p=h.project;p.current_character_id=ident
         if ident is not None:

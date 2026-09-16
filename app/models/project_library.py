@@ -52,6 +52,8 @@ class WorkspaceState:
     ghost_opacity: float = .25
     playing: bool = False
     selected_frames: list[str] = field(default_factory=list)
+    reference_ghost: bool | None = None
+    reference_ghost_opacity: float = .15
 
     @classmethod
     def from_dict(cls, data):
@@ -61,6 +63,8 @@ class WorkspaceState:
         if not math.isfinite(result.timeline_zoom) or not 1 <= result.timeline_zoom <= 100000:
             raise ValueError("Invalid Group timeline zoom")
         if result.frame < 0 or result.source_frame < 0 or result.page not in range(5) or result.editor_tab not in (0, 1):
+            raise ValueError("Invalid Group workspace state")
+        if result.reference_ghost not in (None, True, False) or not 0 <= result.reference_ghost_opacity <= .7:
             raise ValueError("Invalid Group workspace state")
         return result
 

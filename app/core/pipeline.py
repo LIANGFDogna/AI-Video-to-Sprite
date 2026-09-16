@@ -117,7 +117,9 @@ class Pipeline:
     def final_signature(self):
         p = self.project
         base=signature(self.align_signature(),asdict(p.timeline_edit),p.video.fps,p.export_settings.loop,"editor_v1") if p.timeline_edit.enabled else self.align_signature()
-        return signature(base,"animation_offset_v1",asdict(p.animation_transform)) if p.animation_transform.active else base
+        if p.animation_transform.active:base=signature(base,"animation_offset_v1",asdict(p.animation_transform))
+        if p.frame_corrections:base=signature(base,"frame_correction_v1",sorted((int(k),tuple(v)) for k,v in p.frame_corrections.items()))
+        return base
 
     def sheet_signature(self):
         return signature(self.final_signature(), self.project.export_settings.columns)

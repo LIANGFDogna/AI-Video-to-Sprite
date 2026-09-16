@@ -134,7 +134,8 @@ def start_reference_smoke(app,window,output):
                 window.set_animation_offset(9,0);advance('idle_offset')
             elif phase=='idle_offset':
                 if not editor_ready():return
-                assert np.array_equal(e.canvas.ghost_pixels,state['idle_pixels'])
+                # Phase 2C rule: editing the Reference Animation hides its own Ghost.
+                assert e.canvas.ghost_pixels is None and not e.show_idle_ghost.isEnabled()
                 folder=output/'Run';folder.mkdir()
                 for i in range(6):save_rgba(folder/f'{i:04d}.png',translate_rgba(state['idle_pixels'],30+i*3,-i*2))
                 state['run_folder']=folder

@@ -208,7 +208,25 @@ if ($spriteCharacterVerify.ExitCode -ne 0) { throw "Packaged Character restart v
 $spriteCharacterReport = Get-Content -LiteralPath (Join-Path $spriteCharacterDirectory 'validation.json') -Raw | ConvertFrom-Json
 if ($spriteCharacterReport.status -ne 'passed' -or -not $spriteCharacterReport.restart_verified -or -not $spriteCharacterReport.character_reference_isolation) { throw 'Missing Character acceptance result.' }
 
+$spriteFrameDirectory = Join-Path $PSScriptRoot ('build\frame-smoke-' + [Guid]::NewGuid().ToString('N'))
+$spriteFrameSmoke = Start-Process -FilePath $spriteExecutable -ArgumentList @('--smoke-frame-alignment', ('"' + $spriteFrameDirectory + '"')) -WindowStyle Hidden -PassThru
+if (-not $spriteFrameSmoke.WaitForExit(240000)) {
+    $spriteFrameSmoke.Kill()
+    throw 'Packaged frame alignment / reference ghost timed out.'
+}
+$spriteFrameSmoke.Refresh()
+if ($spriteFrameSmoke.ExitCode -ne 0) { throw "Packaged frame alignment failed ($($spriteFrameSmoke.ExitCode)). Check logs/app.log." }
+$spriteFrameVerify = Start-Process -FilePath $spriteExecutable -ArgumentList @('--smoke-frame-alignment', ('"' + $spriteFrameDirectory + '"'), '--verify-frame-alignment') -WindowStyle Hidden -PassThru
+if (-not $spriteFrameVerify.WaitForExit(180000)) {
+    $spriteFrameVerify.Kill()
+    throw 'Packaged frame alignment restart verification timed out.'
+}
+$spriteFrameVerify.Refresh()
+if ($spriteFrameVerify.ExitCode -ne 0) { throw "Packaged frame alignment restart verification failed ($($spriteFrameVerify.ExitCode)). Check logs/app.log." }
+$spriteFrameReport = Get-Content -LiteralPath (Join-Path $spriteFrameDirectory 'validation.json') -Raw | ConvertFrom-Json
+if ($spriteFrameReport.status -ne 'passed' -or -not $spriteFrameReport.restart_verified -or -not $spriteFrameReport.ghost_not_in_export) { throw 'Missing frame alignment acceptance result.' }
+
 $spritePathReports = & (Join-Path $PSScriptRoot 'scripts\verify_path_ui.ps1') -Executable $spriteExecutable
-$spriteReceipt = @{ status = 'passed'; build_version = '20260916-resource-removal'; path_validation = $spritePathReports; reference_validation = $spriteReferenceReports; group_validation = $spriteGroupReport; character_validation = $spriteCharacterReport; editor_validation = $spriteEditorReport; executable_sha256 = (Get-FileHash -LiteralPath $spriteExecutable -Algorithm SHA256).Hash; verified_at = (Get-Date).ToString('o') }
+$spriteReceipt = @{ status = 'passed'; build_version = '20260916-frame-alignment-reference-ghost'; path_validation = $spritePathReports; reference_validation = $spriteReferenceReports; group_validation = $spriteGroupReport; character_validation = $spriteCharacterReport; frame_validation = $spriteFrameReport; editor_validation = $spriteEditorReport; executable_sha256 = (Get-FileHash -LiteralPath $spriteExecutable -Algorithm SHA256).Hash; verified_at = (Get-Date).ToString('o') }
 $spriteReceipt | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $spriteReleaseDirectory 'release-validation.json') -Encoding UTF8
 Write-Host "Built $spriteExecutable. Video input uses FFmpeg; frame sequence input does not. All release checks passed."
