@@ -36,6 +36,7 @@ def start_reference_smoke(app,window,output):
     writer.release()
     project,path=create_project_workspace(output,'ReferenceHero','ai_character')
     window.project,window.project_file=project,path;window._loaded()
+    window.library_controller.new_group(name="Character")
     window._failed=lambda message:setattr(window,'last_error',message)
     state={'phase':'import_idle','started':time.monotonic()}
     timer=QTimer(window);timer.setInterval(30)

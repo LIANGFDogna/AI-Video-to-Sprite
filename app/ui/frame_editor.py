@@ -286,7 +286,12 @@ class FrameEditor(QWidget):
         if p.character_reference:
             try:
                 source=ReferenceSource(p,p.character_reference,self.host.cache_dir,self.host.project_file)
-                if self.reference_source is None or self.reference_source.identity!=source.identity:self.reference_source=source
+                if self.reference_source is None or self.reference_source.identity!=source.identity:
+                    # Group switching may read a reference cache but must never regenerate it.
+                    path=frame_path(source.pipe.keyed,p.character_reference.reference_frame_index)
+                    if not path.is_file():raise ValueError('Reference cache missing; process its Animation explicitly.')
+                    source.pixels=source.cache.read(path)
+                    self.reference_source=source
             except (KeyError,ValueError,OSError) as error:
                 self.reference_source=None;self.reference_load_error=str(error)
         else:self.reference_source=None
@@ -309,9 +314,8 @@ class FrameEditor(QWidget):
         for control in (self.show_reference,self.show_reference_ground,self.show_reference_axes,self.show_idle_ghost,self.reference_opacity):control.setEnabled(bool(reference))
         self.timeline.set_edit(e,p.video.fps,self.selected_ids)
         self.clip_selector.blockSignals(True);self.clip_selector.clear()
-        for ident,data in p.animations.items():
-            self.clip_selector.addItem(data.get('export_settings',{}).get('animation_name',ident),ident)
-        self.clip_selector.addItem(p.export_settings.animation_name,p.animation_id)
+        for row in p.library.in_group(p.current_group_id,kinds={'ANIMATION'}):
+            self.clip_selector.addItem(row.name,row.animation_id)
         self.clip_selector.setCurrentIndex(self.clip_selector.findData(p.animation_id))
         self.clip_selector.blockSignals(False)
         self.tracks.blockSignals(True);self.tracks.clear()
@@ -492,7 +496,7 @@ class FrameEditor(QWidget):
         self.debounce.start(0 if self.timer.isActive() else 25)
 
     def _start_preview(self):
-        if self.worker or self.host.worker or not self.provider or not len(self.provider):return
+        if self.worker or self.host.current_animation_busy or not self.provider or not len(self.provider):return
         self.pending=False
         provider=self.provider;index=self.index;revision=self.revision
         onion=self.onion.isChecked();ghost=self.ghost.isChecked();count=self.neighbors.value();opacity=self.ghost_opacity.value()

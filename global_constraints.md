@@ -49,3 +49,7 @@ Reference是用户摆放且锁定的项目坐标轴，不是旧跟踪Root/Canoni
 
 ## Path Memory本轮
 机器路径历史只进app_settings，不进.aivsprite；新建成功父目录独立记忆，Work按E/D/C/Home回退；取消/失败不写历史；全部算法保持基线。
+
+
+## Phase 2A当前规则优先
+必须Project→Group→媒体；此前无项目直接导入流程由本轮要求取代。旧内容工程自动逻辑迁移；新增Group仅容器不改变Canvas/Key/Root/Motion/Reference/Offset。Group切换禁止隐式处理；任务绑定project/group/animation。

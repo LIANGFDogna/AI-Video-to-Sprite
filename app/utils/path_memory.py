@@ -9,7 +9,7 @@ WORK_ROOT=Path('E:/AI Video to Sprite/work')
 WORK_CANDIDATES=tuple(Path(f'{drive}:/AI Video to Sprite/work') for drive in ('E','D','C'))
 PATH_KEYS=frozenset(('project_create','project_open','project_save','video_import','image_import',
     'image_sequence_import','folder_import','png_export','sprite_sheet_export','frame_export',
-    'project_export','generic_open','generic_save','generic_folder'))
+    'project_export','sprite_sheet_import','group_export','generic_open','generic_save','generic_folder'))
 
 
 def valid_directory(value,ancestors=False):

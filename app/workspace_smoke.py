@@ -76,6 +76,7 @@ def start_workspace_smoke(app, window, output):
                 assert "16-bit/channel" in picker.hint.text()
                 picker.select_button.click()
                 assert picker.selected_folder == str(state["folder"])
+                window.library_controller.new_group(name="Idle")
                 window.import_sequence(state["folder"])
                 state["phase"] = "sequence"
             elif state["phase"] == "sequence":

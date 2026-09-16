@@ -1,5 +1,21 @@
 # Architecture · v0.4
 
+## Group Workspace 模块层（2026-09-16）
+
+新增纯数据资源库 `app/models/project_library.py`：UUID Group 树、资源所有权（SOURCE_VIDEO / SOURCE_SEQUENCE / SOURCE_SPRITE_SHEET / ANIMATION / GENERATED_SPRITE_SHEET）、每 Group 与每 Animation 的 WorkspaceState、状态机（EMPTY / SOURCE_ONLY / PROCESSING / READY / WARNING）以及严格 `validate()`（层级环、孤儿资源、重复动画所有权、Project Root 素材、同级重名、生成 Sheet 跟随所属 Animation）。Group 只是容器，不改变 Canvas / Key / Root / Motion / Reference 的任何参数。
+
+`app/models/project.py` 增加 `library` 与 `current_group_id`：`project_context()` 让快照携带资源库而 `animation_snapshot()` 仍只含动画参数；`ensure_library()` 迁移旧工程内容到 Imported Animations（不改参数、不改缓存 ID、保留手动 Root）；`select_animation()` / `empty_context()` / `merge_animation_result()` 提供按动画切换、空 Group 上下文与后台结果合并。
+
+`app/ui/library_controller.py` 是唯一的资源库协调者：只读 Group 切换（只读取 manifest 与已有预览，不调用任何 Pipeline 处理阶段）、UIState 捕获与恢复、命令历史与动画编辑历史统一路由（RoutedEditHistory）、导入事务、拖放导入队列与导出入口。`app/ui/project_library.py` 只负责树、搜索、菜单与拖放，不含像素逻辑。
+
+`app/core/group_export.py` 预规划完整输出路径（树路径或平铺、名称 sanitize 与同级去重），先在目标目录内 staging，全部成功后按顶层目录 rename 发布；既有顶层输出一律拒绝，失败或取消不留下半成品，也不删除任何外部文件。`app/ui/group_export_dialog.py` 用同一份 plan 做预览与执行。
+
+数据流：Add 菜单 / 拖放 → 捕获目标 Group UUID → Source 与 Animation 独立身份 → 既有 Pipeline（Decode → Key → Root → Motion → Align → Sheet → Preview）→ 按 TaskContext 合并所属动画快照 → 生成 Sprite Sheet 资源。切换 Group → 保存旧 UIState → 目标 UUID → 只读缓存 → 恢复 UI。批量导出 → 选定 UUID → 树路径预规划 → 已有 Sheet / Animation JSON / Root Motion JSON → 无覆盖输出。
+
+拖放 index 契约：Qt 落点指示给出的 index 以「含被拖动项的完整同级列表」为坐标，而模型 `move_group` / `move_resource` 的 index 以「移除被拖动项之后」的列表为坐标。转换统一放在 UI 层（同容器且原位置在落点之前时 index-1），Group 与 Resource 两个分支共用同一函数，模型 API 语义保持不变；UI 测试覆盖 A→B 下方、A→C 下方、C→A 上方三个方向。
+
+后台任务：`_run(..., animation_task=...)` 捕获不可变 TaskContext(project_id, group_id, animation_id)，结果只合并到所属动画；`current_animation_busy` 让编辑器预览不阻塞其它 Group 的浏览。
+
 ## 机器路径设置与统一窗口（2026-09-16）
 
 `utils/app_settings.py`复用既有机器配置，读UTF-8/BOM并容忍损坏内容；写入使用同目录唯一临时文件、fsync及原子replace。`TranslationManager.save_language`合并字段，避免语言保存覆盖路径历史。`utils/path_memory.py`的`PathMemoryService`不依赖Qt或Project，保存`path_state(version=1,work_root,last_location,recent_paths)`。

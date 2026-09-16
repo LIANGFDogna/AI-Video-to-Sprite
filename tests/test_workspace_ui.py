@@ -126,6 +126,7 @@ def test_new_project_ui_empty_home_save_reload_and_import_inherits(qt, tmp_path)
         source = np.full((32, 32, 4), (220, 50, 90, 128), np.uint8)
         Image.fromarray(source).save(folder / '0.png')
         project_id = window.project.project_id
+        window.library_controller.new_group(name="Idle")
         window.import_sequence(folder)
         events(qt, lambda: window.sequence_dialog is not None and window.worker is None)
         assert window.sequence_dialog.fps.value() == 12.5

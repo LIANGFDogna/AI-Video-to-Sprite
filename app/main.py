@@ -28,9 +28,13 @@ def main() -> int:
     parser.add_argument("--smoke-character-reference", type=Path, help="Validate locked character axes, whole-animation offsets and final export")
     parser.add_argument("--smoke-path-memory",type=Path,help="Validate file dialogs, persistent purpose paths and UI controls")
     parser.add_argument("--verify-path-memory",action="store_true",help="Second-process verification of saved path history")
+    parser.add_argument("--smoke-groups",type=Path,help="Validate Group workspace, imports, exports and task isolation")
+    parser.add_argument("--verify-groups",action="store_true",help="Verify saved Groups in a fresh process")
     args = parser.parse_args()
     import os,tempfile,uuid
-    if args.smoke_path_memory:
+    if args.smoke_groups:
+        os.environ["AIVSPRITE_SETTINGS"]=str(args.smoke_groups.resolve()/"machine-settings.json")
+    elif args.smoke_path_memory:
         os.environ['AIVSPRITE_SETTINGS']=str(args.smoke_path_memory.resolve()/'machine-settings.json')
     elif any((args.smoke_test,args.smoke_preview,args.smoke_workspace,args.smoke_keyed_passthrough,args.smoke_project_canvas,args.smoke_editor,args.smoke_character_reference)) and 'AIVSPRITE_SETTINGS' not in os.environ:
         os.environ['AIVSPRITE_SETTINGS']=str(Path(tempfile.gettempdir())/'AI Video to Sprite'/('smoke-settings-'+uuid.uuid4().hex+'.json'))
@@ -48,7 +52,10 @@ def main() -> int:
     sys.excepthook = exception_hook
     window = MainWindow(log_path)
     window.show()
-    if args.smoke_path_memory:
+    if args.smoke_groups:
+        from app.group_smoke import start_group_smoke
+        start_group_smoke(app,window,args.smoke_groups,args.verify_groups)
+    elif args.smoke_path_memory:
         from app.path_ui_smoke import start_path_smoke
         start_path_smoke(app,window,args.smoke_path_memory,args.verify_path_memory)
     elif args.smoke_character_reference:

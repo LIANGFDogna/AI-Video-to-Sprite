@@ -48,6 +48,7 @@ def test_mixed_sequence_preview_reports_each_source_and_exports_same_cells(qt, t
             rgba = np.zeros((h, w, 4), np.uint8)
             rgba[8:16, 20:28] = (230, 40, 90, 180)
             Image.fromarray(rgba).save(folder / f'{i}.png')
+        window.library_controller.new_group(name="Idle")
         window.import_sequence(folder)
         events(qt, lambda: window.sequence_dialog is not None and window.worker is None)
         dialog = window.sequence_dialog

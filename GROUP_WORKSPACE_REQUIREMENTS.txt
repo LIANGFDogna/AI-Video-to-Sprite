@@ -1,0 +1,1824 @@
+继续开发项目：
+
+E:\AI Video to Sprite
+
+当前稳定版本：
+20260915-path-memory-ui-audit
+
+本轮重新定义为：
+
+==================================================
+Phase 2A：Group-Centric Project Library
+项目 Group 工作区系统
+==================================================
+
+核心规则发生调整：
+
+Project
+不是直接导入素材。
+
+必须：
+
+Project
+→ 创建 Group
+→ 在 Group 下导入视频 / 序列帧 / 已有精灵图
+→ 处理
+→ 生成 Animation / Sprite Sheet
+
+Group 是后续所有动画处理的基本工作单元。
+
+==================================================
+一、核心数据结构
+==================================================
+
+项目结构优先设计为：
+
+Project
+├─ Group A
+│  ├─ Source Video 1
+│  ├─ Source Video 2
+│  ├─ Image Sequence 1
+│  ├─ Imported Sprite Sheet
+│  ├─ Animation 1
+│  ├─ Animation 2
+│  └─ Generated Sprite Sheet
+│
+├─ Group B
+│  ├─ Animation 1
+│  └─ Animation 2
+│
+└─ Group C
+
+注意：
+
+一个 Group 可以拥有多个动画。
+
+一个 Group 可以拥有多个原始视频。
+
+一个 Group 可以拥有多个序列帧。
+
+一个 Group 可以拥有多个已经处理完成的精灵图。
+
+这些资源必须可以同时存在。
+
+不要再设计成：
+
+一个项目只能处理一个当前视频
+或
+一个 Group 只能有一个 Animation。
+
+==================================================
+二、Group 是处理上下文
+==================================================
+
+用户必须先：
+
+创建 Group
+
+然后才允许：
+
+导入视频
+导入序列帧
+导入 Sprite Sheet
+开始处理
+
+没有 Group 时：
+
+Import Video
+Import Sequence
+Import Sprite Sheet
+
+应该禁用。
+
+或者点击时提示：
+
+请先创建一个 Group。
+
+绝对不要再把素材直接导入 Project Root。
+
+==================================================
+三、左侧 Project Library
+==================================================
+
+主界面左边改成真正的项目资源树。
+
+例如：
+
+类银河城游戏
+
+[＋ 添加]   [搜索]
+
+▼ Idle
+    video_idle_01
+    idle_take_02
+    idle_final
+    idle_sheet
+
+▼ Run
+    run_video_01
+    run_loop
+    run_sheet
+
+▼ Jump
+    jump_up
+    fall_loop
+    land
+
+▼ Attack
+    attack_01
+    attack_02
+    attack_sheet
+
+Group 可以继续允许嵌套：
+
+主角
+    Movement
+        Idle
+        Run
+
+    Jump
+        JumpUp
+        FallLoop
+        Land
+
+但本轮最核心先保证：
+
+Group
+→ 多素材
+→ 多动画
+
+稳定。
+
+==================================================
+四、左上角唯一主要创建入口
+==================================================
+
+不要继续使用截图中这种：
+
+顶部：
+新建项目
+导入视频
+导入序列帧
+导出
+
+中央：
+新建项目
+打开工程
+导入视频
+导入序列帧
+
+右侧：
+导入视频
+导入序列帧
+
+这种重复入口。
+
+后续主要入口统一集中到：
+
+左侧 Project Library 顶部：
+
+＋ 添加
+
+点击：
+
+＋
+
+弹出菜单：
+
+新建项目
+打开项目
+────────
+新建 Group
+新建子 Group
+────────
+导入视频
+导入序列帧
+导入 Sprite Sheet
+────────
+导出 Group
+批量导出 Group
+
+根据当前选择动态启用。
+
+==================================================
+五、顶部工具栏调整
+==================================================
+
+截图顶部目前：
+
+新建项目
+导入视频
+导入序列帧
+打开工程
+保存工程
+导出
+撤销
+重做
+诊断日志
+语言
+
+本轮调整。
+
+移除或隐藏重复的：
+
+新建项目
+导入视频
+导入序列帧
+导出
+
+这些主要操作统一进入：
+
+左侧 ＋ 添加菜单。
+
+顶部可以保留：
+
+打开工程
+保存工程
+另存为
+撤销
+重做
+诊断日志
+语言
+
+也可以保留：
+
+当前 Project 名称
+
+但不要再有重复 Import / Export 入口。
+
+==================================================
+六、中央空项目页面调整
+==================================================
+
+截图中央现在有：
+
+新建项目
+打开工程
+导入视频
+导入序列帧
+
+后续不再把：
+
+导入视频
+导入序列帧
+
+作为中央入口。
+
+没有 Group 时中央只显示：
+
+当前项目还没有 Group。
+
+[创建第一个 Group]
+
+可以附加说明：
+
+创建 Group 后即可导入视频、序列帧或精灵图。
+
+如果连项目都没有：
+
+[新建项目]
+[打开项目]
+
+即可。
+
+不要再出现：
+
+无 Group 状态下直接导入视频。
+
+==================================================
+七、Group 创建
+==================================================
+
+点击：
+
+＋
+→ 新建 Group
+
+弹出：
+
+Group 名称
+
+例如：
+
+Idle
+Run
+Jump
+Attack
+Boss_Idle
+Enemy_Run
+
+创建成功后：
+
+自动选中这个 Group。
+
+中央区域切换为：
+
+该 Group 的工作区。
+
+==================================================
+八、Group 可以包含多个动画
+==================================================
+
+这是本轮非常重要的规则。
+
+例如：
+
+Group：
+
+Attack
+
+可以同时拥有：
+
+Attack_01
+Attack_02
+Attack_03
+Attack_Heavy
+Attack_Air
+attack_source_video_01
+attack_source_video_02
+attack_sheet_01
+
+不要限制成：
+
+Group == Animation
+
+Group 是容器。
+
+Animation 才是具体动画资源。
+
+==================================================
+九、Group 内导入视频
+==================================================
+
+选中：
+
+Attack
+
+点击：
+
+＋
+→ 导入视频
+
+导入的视频：
+
+自动归属于 Attack Group。
+
+处理完成后：
+
+生成的 Animation 也属于：
+
+Attack Group。
+
+最终 Sprite Sheet 仍然挂在：
+
+Attack Group
+
+下面。
+
+资源关系示例：
+
+Attack
+├─ attack.mp4
+├─ Attack_01
+│  ├─ Frames
+│  └─ Sprite Sheet
+│
+└─ Attack_02
+
+==================================================
+十、导入序列帧
+==================================================
+
+Group 选中状态：
+
+Idle
+
+导入 PNG Sequence。
+
+处理完成：
+
+Idle
+├─ Sequence_Source_01
+├─ Idle_Animation
+└─ Idle_SpriteSheet
+
+保持在同一个 Group 内。
+
+==================================================
+十一、导入已有 Sprite Sheet
+==================================================
+
+增加：
+
+Import Sprite Sheet
+
+允许：
+
+项目已有精灵图
+AI Video to Sprite 导出的精灵图
+外部游戏精灵图
+
+直接进入 Group。
+
+例如：
+
+Run
+├─ run_sheet_old.png
+├─ run_video_new.mp4
+├─ run_animation_new
+└─ run_sheet_new.png
+
+多个 Sprite Sheet 可以同时存在。
+
+==================================================
+十二、点击 Group 实时切换工作区
+==================================================
+
+这是本轮核心 UX。
+
+例如：
+
+当前选中：
+
+Idle
+
+中央：
+
+Idle 的画布
+Idle 的时间线
+Idle 的动画资源
+Idle 的 Character Reference / Offset
+Idle 的 Sprite Sheet
+
+点击：
+
+Run
+
+整个主工作区立即切换：
+
+Run 的画布
+Run 的时间线
+Run 的资源
+Run 的动画
+Run 的 Sprite Sheet
+
+再点击：
+
+Attack
+
+切换为 Attack。
+
+不能只有左侧 Tree 名称变化，但中央仍然保留上一个动画状态。
+
+==================================================
+十三、每个 Group 保存独立 UI State
+==================================================
+
+每个 Group 至少需要记住：
+
+当前选中的 Animation
+当前 Frame
+Timeline Zoom
+Timeline Scroll
+当前 Editor Tab
+当前 Preview 状态
+
+例如：
+
+Idle：
+
+停在 Frame 14
+
+Run：
+
+停在 Frame 6
+
+用户：
+
+Idle → Run → Idle
+
+回来后：
+
+Idle 仍然是 Frame 14。
+
+不要每次切换 Group 都重置工作区。
+
+==================================================
+十四、Group 时间线
+==================================================
+
+一个 Group 内可以有多个 Animation。
+
+这些 Animation 必须能够在同一条 Group Timeline / Animation Timeline 中管理。
+
+本轮至少做到：
+
+同一个 Group 下的多个 Animation 可以同时存在。
+
+用户可以选择：
+
+Animation A
+Animation B
+Animation C
+
+时间线随当前 Animation 切换。
+
+架构上必须预留未来：
+
+多个 Animation Clip 显示在同一 Timeline。
+
+例如未来：
+
+Attack Group
+
+Track / Clip：
+
+Attack01
+Attack02
+Attack03
+
+本轮如果完整多轨时间线改动过大：
+
+可以先做：
+
+Group Timeline
+→ 当前 Animation Track
+
+但是数据模型必须支持：
+
+Group contains multiple animations。
+
+不要把 Timeline 永久绑定到 Group 唯一动画。
+
+==================================================
+十五、动画之间可以共存
+==================================================
+
+用户导入：
+
+Idle Video A
+Idle Video B
+Idle PNG Sequence C
+
+处理后得到：
+
+Idle_A
+Idle_B
+Idle_C
+
+不能：
+
+导入 B 就覆盖 A。
+
+必须：
+
+全部保留。
+
+用户通过左侧 Tree 或 Group 内 Animation List：
+
+切换当前动画。
+
+==================================================
+十六、处理结果层级
+==================================================
+
+建议资源类型：
+
+GROUP
+
+SOURCE_VIDEO
+SOURCE_SEQUENCE
+SOURCE_SPRITE_SHEET
+
+ANIMATION
+
+GENERATED_SPRITE_SHEET
+
+例如：
+
+Run
+├─ run_ai_video.mp4             [Source]
+├─ run_alt_video.mp4            [Source]
+│
+├─ Run_V1                       [Animation]
+│   └─ run_v1_sheet.png         [Generated]
+│
+└─ Run_V2                       [Animation]
+    └─ run_v2_sheet.png
+
+不要把所有东西扁平化。
+
+==================================================
+十七、Group 导出
+==================================================
+
+左侧：
+
+＋
+→ 导出 Group
+
+如果当前选中：
+
+Run
+
+则进入：
+
+Export Group
+
+默认导出当前 Group。
+
+==================================================
+十八、批量导出 Group
+==================================================
+
+增加：
+
+批量导出 Group
+
+打开独立页面 / Dialog：
+
+导出 Group
+
+例如：
+
+☑ Idle
+☑ Run
+☑ Jump
+☐ Empty_Test
+☑ Attack
+☐ Draft
+
+规则：
+
+有可导出 Animation / Sprite Sheet 的 Group：
+
+默认勾选。
+
+完全没有动画的 Group：
+
+默认不勾选。
+
+如果 Group 只有：
+
+空目录
+未处理 Source Video
+
+没有最终动画：
+
+默认不勾选。
+
+用户仍然可以手工改变选择。
+
+==================================================
+十九、导出 Group 页面
+==================================================
+
+页面建议：
+
+导出 Group
+
+搜索...
+
+☑ 全选
+☐ 只选择有动画的 Group
+
+────────────────
+
+☑ MainCharacter/Idle       2 animations
+☑ MainCharacter/Run        1 animation
+☑ MainCharacter/Jump       3 animations
+☐ MainCharacter/Test       Empty
+☑ Boss/Attack              4 animations
+
+────────────────
+
+导出目录：
+
+E:\GameExport
+
+目录结构：
+
+● 保持项目树结构
+○ 平铺
+
+[导出]
+
+==================================================
+二十、导出路径必须保留 Tree 路径
+==================================================
+
+用户要求：
+
+导出的路径按照树状图路径。
+
+例如 Project：
+
+类银河城游戏
+
+结构：
+
+主角
+    Movement
+        Idle
+        Run
+
+    Jump
+        JumpUp
+        FallLoop
+        Land
+
+Boss
+    Attack
+
+用户选择导出到：
+
+D:\GameAssets
+
+最终：
+
+D:\GameAssets\
+    主角\
+        Movement\
+            Idle\
+            Run\
+
+        Jump\
+            JumpUp\
+            FallLoop\
+            Land\
+
+    Boss\
+        Attack\
+
+Group Tree 路径：
+
+就是 Export Folder 路径。
+
+==================================================
+二十一、Group 内多个动画的导出
+==================================================
+
+例如：
+
+Attack Group：
+
+Attack01
+Attack02
+Attack03
+
+导出：
+
+...\Attack\
+    Attack01\
+    Attack02\
+    Attack03\
+
+或者根据当前项目 Export Preset：
+
+Attack01.png
+Attack02.png
+Attack03.png
+
+但是必须保证：
+
+不会互相覆盖。
+
+==================================================
+二十二、文件名冲突
+==================================================
+
+如果：
+
+Group A
+和
+Group B
+
+都有：
+
+idle.png
+
+由于树目录不同：
+
+允许。
+
+如果同一个 Group 下：
+
+Animation 名称冲突：
+
+禁止静默覆盖。
+
+采用：
+
+Idle
+Idle_2
+
+或提示用户。
+
+==================================================
+二十三、Group 必须先存在
+==================================================
+
+后续正式工作流改成：
+
+New Project
+↓
+Create Group
+↓
+Select Group
+↓
+Import Video / Sequence / Sprite Sheet
+↓
+Process
+↓
+Animation
+↓
+Sprite Sheet
+↓
+Export Group
+
+不要再设计：
+
+New Project
+↓
+Import Video
+
+这种流程。
+
+==================================================
+二十四、旧项目兼容
+==================================================
+
+已有项目可能没有 Group。
+
+必须自动迁移。
+
+例如旧项目只有一个动画：
+
+自动建立：
+
+Imported Animations
+
+Group。
+
+将旧 Animation 放进去。
+
+或者：
+
+如果旧项目已有动画名称：
+
+创建默认：
+
+Default Group
+
+不要改变：
+
+画布
+Key
+Root
+Motion
+Character Reference
+Animation Offset
+导出结果
+
+只是加逻辑容器。
+
+==================================================
+二十五、Character Reference 与 Group
+==================================================
+
+当前 Character Reference 第一阶段已经存在。
+
+本轮先不要彻底重构 Character 系统。
+
+可以：
+
+Group 暂时继续共享当前项目 Character Reference。
+
+但是数据模型必须预留：
+
+Group.character_id
+
+未来：
+
+Character
+→ Group
+→ Animation
+
+下一阶段再正式加入：
+
+Character Tree。
+
+不要本轮同时把：
+
+Group
+Character
+Animation Set
+Template
+
+全部做掉。
+
+==================================================
+二十六、Group 状态
+==================================================
+
+Group 可以有状态：
+
+EMPTY
+
+SOURCE_ONLY
+
+PROCESSING
+
+READY
+
+WARNING
+
+例如 Tree：
+
+○ Idle          Empty
+◐ Run           Source
+● Jump          Ready
+⚠ Attack        Warning
+
+可以用图标而不是文字。
+
+本轮如果图标成本高：
+
+至少数据层预留 status。
+
+==================================================
+二十七、Group Animation Count
+==================================================
+
+Group 显示：
+
+动画数量。
+
+例如：
+
+Idle            2
+Run             1
+Jump            3
+
+父 Group：
+
+MainCharacter   16
+
+递归计算 Animation Count。
+
+Source Video 不算 Animation Count。
+
+Sprite Sheet 不算 Animation Count。
+
+==================================================
+二十八、Tree 点击规则
+==================================================
+
+点击 Group：
+
+切换 Group Workspace。
+
+点击 Animation：
+
+切换到：
+
+该 Group
++
+该 Animation
+
+点击 Source Video：
+
+可以显示 Source Info
+
+但不改变 Animation 数据。
+
+点击 Sprite Sheet：
+
+显示 Sprite Preview。
+
+==================================================
+二十九、Group Workspace
+==================================================
+
+中央区域建议以后成为：
+
+Group Workspace
+
+顶部：
+
+Group: Run
+
+Animation:
+[Run_v1 ▼]
+
+下面仍然是当前：
+
+Import
+Key
+Edit
+Sprite
+Export
+
+工作流。
+
+只是它们现在全部绑定：
+
+current_group_id
+current_animation_id
+
+==================================================
+三十、顶部五步骤仍然保留
+==================================================
+
+当前：
+
+1 导入
+2 抠像
+3 编辑
+4 精灵图
+5 导出
+
+可以继续保留。
+
+但：
+
+它们必须作用于：
+
+当前 Group
+当前 Animation
+
+不能再假定：
+
+整个 Project 只有一个 Animation。
+
+==================================================
+三十一、取消 Import 页面里的大入口
+==================================================
+
+截图中央：
+
+AI 视频 / 精灵图
+
+新建项目
+打开工程
+导入视频
+导入序列帧
+
+这整块在有项目后没有必要。
+
+改成：
+
+当前未选择 Group：
+请选择或创建 Group
+
+当前 Group 为空：
+将视频、序列帧或精灵图添加到此 Group
+
+[＋ 添加素材]
+
+但不要重复四个巨大的按钮。
+
+==================================================
+三十二、右侧 Import 按钮也要收口
+==================================================
+
+截图右侧现在：
+
+导入视频
+导入序列帧
+打开 .aivsprite 项目
+
+后续：
+
+导入视频
+导入序列帧
+
+从右侧移除。
+
+右侧只显示当前流程的：
+
+Inspector
+Parameters
+Information
+
+导入统一：
+
+左侧 ＋ 添加
+
+==================================================
+三十三、Add Menu 动态内容
+==================================================
+
+如果没有项目：
+
+＋
+
+新建项目
+打开项目
+
+如果已有项目，没有选 Group：
+
+＋
+
+新建 Group
+新建子 Group
+批量导出 Group
+
+如果选中 Group：
+
+＋
+
+新建 Group
+新建子 Group
+────────
+导入视频
+导入序列帧
+导入 Sprite Sheet
+────────
+导出当前 Group
+批量导出 Group
+
+如果选中 Animation：
+
+仍以上级 Group 为导入目标。
+
+==================================================
+三十四、拖拽导入
+==================================================
+
+用户可以：
+
+把 MP4
+PNG
+文件夹
+Sprite Sheet
+
+拖到某个 Group 节点。
+
+则直接导入该 Group。
+
+但是：
+
+拖到 Project Root
+
+不能直接导入。
+
+提示：
+
+请拖到 Group。
+
+==================================================
+三十五、Path Memory
+==================================================
+
+保持当前：
+
+PathMemoryService
+
+视频
+序列
+Sprite Sheet
+Group Export
+
+分别记忆。
+
+不要破坏：
+
+Cancel 不更新。
+
+==================================================
+三十六、Undo / Redo
+==================================================
+
+Group 操作必须加入：
+
+Create Group
+Rename
+Move
+Reorder
+Delete / Remove
+
+Animation 在 Group 之间移动：
+
+也接 Undo。
+
+==================================================
+三十七、删除 Group
+==================================================
+
+Group 有内容时：
+
+不能直接删除。
+
+弹窗：
+
+Group 包含：
+
+2 个视频
+3 个动画
+3 个 Sprite Sheet
+
+选项：
+
+取消
+移动内容到父 Group
+
+不要：
+
+默认删除外部 Source 文件。
+
+==================================================
+三十八、Group 多动画保存
+==================================================
+
+项目保存：
+
+必须记录：
+
+Group Tree
+Group children
+Animation ownership
+Source ownership
+Sprite Sheet ownership
+
+关闭程序。
+
+重新打开。
+
+必须完整恢复。
+
+==================================================
+三十九、不同 Group 实时切换测试
+==================================================
+
+创建：
+
+Idle
+Run
+Jump
+
+Idle：
+
+2 Animation
+
+Run：
+
+1 Animation
+
+Jump：
+
+3 Animation
+
+分别：
+
+不同 Current Frame
+不同 Timeline Scroll
+不同 Current Animation
+
+快速点击：
+
+Idle
+Run
+Jump
+Idle
+Run
+
+验证：
+
+工作区状态不会串。
+
+==================================================
+四十、切 Group 时不能重新处理
+==================================================
+
+切换 Group：
+
+绝对不能：
+
+重新 Decode Video
+重新 Key
+重新生成 RGBA
+重新 Build Sprite Sheet
+
+只加载：
+
+已有状态 / Cache。
+
+切换应该接近即时。
+
+==================================================
+四十一、Sprite Sheet 共存
+==================================================
+
+一个项目中：
+
+多个 Group 的 Sprite Sheet
+
+必须可以同时存在。
+
+不能：
+
+打开 Run Sheet
+
+导致：
+
+Idle Sheet 被卸载或丢失。
+
+内存层可以 Lazy Load。
+
+项目层必须全部存在。
+
+==================================================
+四十二、Animation Cache
+==================================================
+
+每个 Animation 使用：
+
+animation_id
+
+作为 Cache Key。
+
+不要再只使用：
+
+current_project
+
+或：
+
+当前 filename
+
+否则多个 Group 有同名动画会冲突。
+
+==================================================
+四十三、Group ID
+==================================================
+
+每个 Group：
+
+UUID。
+
+不要以：
+
+Group Name
+
+作为唯一 ID。
+
+允许：
+
+不同父节点都有：
+
+Idle
+
+例如：
+
+MainCharacter/Idle
+Boss/Idle
+
+完全合法。
+
+==================================================
+四十四、导出 ID 与名称
+==================================================
+
+磁盘路径使用：
+
+显示名称。
+
+内部关系使用：
+
+UUID。
+
+如果名称含：
+
+Windows 非法字符
+
+导出时：
+
+安全 sanitize。
+
+但是：
+
+UI 原名称不需要被强制修改。
+
+==================================================
+四十五、导出 Tree Path 测试
+==================================================
+
+项目：
+
+MainCharacter
+    Movement
+        Run
+
+Boss
+    Movement
+        Run
+
+导出后：
+
+Export/
+MainCharacter/
+    Movement/
+        Run/
+
+Boss/
+    Movement/
+        Run/
+
+两个 Run 不得冲突。
+
+==================================================
+四十六、空 Group
+==================================================
+
+Export Group Dialog：
+
+空 Group：
+
+默认：
+
+Unchecked
+
+并显示：
+
+Empty
+
+如果用户强制勾选：
+
+可以创建空文件夹
+
+或者提示：
+
+该 Group 没有可导出动画。
+
+优先：
+
+允许选择但显示 Warning。
+
+==================================================
+四十七、Group Export 选项
+==================================================
+
+本轮至少：
+
+Sprite Sheet
+Animation JSON
+Root Motion JSON
+
+根据 Group 中实际资源决定。
+
+以后可以增加：
+
+Godot Bundle
+Unity
+PNG Sequence
+
+不要本轮扩张太多。
+
+==================================================
+四十八、当前页面标题
+==================================================
+
+主工作区明确显示：
+
+Project / Group / Animation
+
+例如：
+
+类银河城游戏
+/
+MainCharacter
+/
+Run
+/
+Run_v2
+
+避免用户不知道自己正在编辑哪个 Animation。
+
+==================================================
+四十九、状态栏
+==================================================
+
+底部状态栏也可以显示：
+
+Group: Run
+Animation: Run_v2
+
+尤其处理任务期间：
+
+Processing:
+Run / Run_v2 / Keying
+
+避免多个资源时混乱。
+
+==================================================
+五十、任务队列必须绑定 Group
+==================================================
+
+任何后台任务：
+
+Decode
+Key
+Analyze
+Sprite Build
+
+都必须记录：
+
+project_id
+group_id
+animation_id
+
+用户在处理 Run 时切去 Idle：
+
+Run 的任务完成后：
+
+不能把结果写到 Idle。
+
+这是多 Group 架构最重要的安全规则之一。
+
+==================================================
+五十一、异步完成后的 UI
+==================================================
+
+例如：
+
+Run 正在抠像。
+
+用户切换：
+
+Idle。
+
+Run 完成。
+
+应该：
+
+Run 节点出现完成状态。
+
+但中央页面仍然保持 Idle。
+
+不要自动把用户跳回 Run。
+
+==================================================
+五十二、Group 命名
+==================================================
+
+同一个父节点下：
+
+建议阻止完全同名 Group。
+
+自动：
+
+Run
+Run 2
+Run 3
+
+或者要求用户修改。
+
+不同父 Group 下：
+
+允许同名。
+
+==================================================
+五十三、测试要求
+==================================================
+
+现有所有测试继续通过。
+
+新增至少覆盖：
+
+必须创建 Group 才能 Import。
+
+Project Root 禁止 Import。
+
+一个 Group 多 Video。
+
+一个 Group 多 Sequence。
+
+一个 Group 多 Animation。
+
+一个 Group 多 Sprite Sheet。
+
+不同 Group 的 Animation 共存。
+
+不同 Group 的 Sprite Sheet 共存。
+
+点击 Group 实时切换 Workspace。
+
+切换 Group 不触发 Reprocess。
+
+Group UI State 保存。
+
+Group Current Animation 保存。
+
+Animation Cache 不冲突。
+
+同名 Animation 不冲突。
+
+Group Drag & Drop。
+
+Source Drag & Drop。
+
+批量 Export Group。
+
+Empty Group 默认不勾选。
+
+Export 保持 Tree Path。
+
+跨父 Group 同名正常导出。
+
+Windows 非法字符导出 sanitize。
+
+Background Task 不串 Group。
+
+旧工程迁移。
+
+保存 / 重开。
+
+中文 Group。
+
+中文 Tree Path。
+
+125% / 150% DPI。
+
+==================================================
+五十四、不要本轮实现
+==================================================
+
+本轮不要同时实现：
+
+Character Template
+Player Template
+Boss Template
+Enemy Template
+Jump Animation Set
+Combo Animation Set
+
+这些留下一阶段。
+
+本轮只把：
+
+Group
+Multi Source
+Multi Animation
+Multi Sprite Sheet
+Group Workspace
+Group Export
+
+彻底做好。
+
+==================================================
+五十五、构建
+==================================================
+
+全量测试通过后：
+
+构建：
+
+E:\AI Video to Sprite\dist\AI Video to Sprite\AI Video to Sprite.exe
+
+Build Identifier：
+
+20260916-group-workspace
+
+实际启动正式 dist。
+
+==================================================
+五十六、人工验收
+==================================================
+
+使用正式 EXE：
+
+新建项目：
+
+类银河城游戏
+
+创建 Group：
+
+Idle
+Run
+Jump
+
+尝试未选 Group 导入：
+
+必须阻止。
+
+选 Idle：
+
+导入 Video A
+导入 Video B
+处理两个动画。
+
+确认：
+
+两个动画同时存在。
+
+选 Run：
+
+导入序列帧。
+
+处理。
+
+切：
+
+Idle
+Run
+Idle
+
+确认：
+
+各自画布
+Frame
+Timeline
+Sprite Sheet
+
+不会串。
+
+Jump：
+
+导入已有 Sprite Sheet。
+
+确认：
+
+项目内：
+
+Idle Sheet
+Run Sheet
+Jump Sheet
+
+全部同时存在。
+
+然后：
+
+批量导出 Group。
+
+选择：
+
+Idle
+Run
+Jump
+
+确认导出目录：
+
+Export/
+Idle/
+Run/
+Jump/
+
+再测试嵌套：
+
+MainCharacter/
+    Movement/
+        Run
+
+确认：
+
+Export/
+MainCharacter/
+Movement/
+Run/
+
+完全保持 Tree Path。
+
+保存。
+
+关闭。
+
+重开。
+
+所有 Group、Animation、Sheet、状态都恢复。
+
+==================================================
+完成后报告
+==================================================
+
+完成后请明确汇报：
+
+1. Group Model 在哪里。
+2. Resource Model 在哪里。
+3. Animation 如何绑定 Group。
+4. Sprite Sheet 如何绑定 Group。
+5. 一个 Group 是否支持多个 Animation。
+6. 一个 Group 是否支持多个 Source。
+7. Group Workspace 状态如何保存。
+8. 切换 Group 是否完全不重新处理。
+9. 后台任务如何防止串 Group。
+10. 左上 Add Menu 实现在哪里。
+11. 顶部哪些重复按钮被移除。
+12. 中央哪些重复入口被移除。
+13. 右侧哪些 Import 入口被移除。
+14. 无 Group 时如何阻止 Import。
+15. Import Video 如何进入当前 Group。
+16. Import Sequence 如何进入当前 Group。
+17. Import Sprite Sheet 如何进入当前 Group。
+18. Group Export 如何实现。
+19. 批量 Export Group 如何实现。
+20. Empty Group 是否默认不勾选。
+21. Export 是否保留完整 Tree Path。
+22. 同名 Group / Animation 是否安全。
+23. 旧工程如何迁移。
+24. 保存 / 重开是否保持 Group 状态。
+25. 测试总数。
+26. DPI 验证。
+27. Build Identifier。
+28. dist EXE 更新时间。
+29. 正式验证 EXE 路径。
+30. 已知限制。

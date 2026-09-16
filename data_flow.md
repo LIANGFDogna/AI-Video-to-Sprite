@@ -45,3 +45,7 @@ Root 后新增 Motion：raw_root → filtered_root / motion_root → target_root
 
 ## 文件选择路径
 AppSettings.path_state→PathMemory.resolve(purpose,project)→统一Qt Picker→业务Worker→成功回调记用途目录/last_location。取消/失败不写。新建project_create独立走有效父目录→E/D/C Work→Home。
+
+
+## Phase 2A数据流
+Add菜单/Group拖放→捕获Group UUID→Source+Animation独立身份→既有Pipeline→按TaskContext合并动画结果→生成Sheet资源。点击Group→保存旧UI状态→快照选择→只读缓存→恢复UI。批量导出→选定UUID→树路径预规划→已有Sheet/Animation JSON/Root JSON→无覆盖输出。

@@ -45,7 +45,7 @@ def start_keyed_smoke(app, window, project_path, output=None):
             if window.last_error:
                 raise AssertionError(window.last_error)
             if time.monotonic() - state["start"] > 85:
-                raise AssertionError("Keyed video UI smoke timed out")
+                raise AssertionError("Keyed video UI smoke timed out: phase=%s worker=%s preview=%s/%s keyed_ready=%s step=%s busy=%s task=%s last=%s | status=%s animation=%s group=%s groups=%s row=%s project=%s" % (state["phase"],bool(window.worker),bool(window.preview_worker),bool(window.preview_pending),bool(window.keyed_ready),window.steps.currentIndex(),bool(window.interaction_busy),getattr(window,"task_context",None) is not None,window.last_error,window.status.text(),window.project.animation_id,window.project.current_group_id,len(window.project.library.groups),bool(window.project.library.animation(window.project.animation_id)),window.project.project_id))
             if window.worker:
                 state.pop("ready_since", None)
                 return

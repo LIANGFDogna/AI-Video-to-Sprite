@@ -32,6 +32,7 @@ def start_editor_smoke(app,window,output):
     project,path=create_project_workspace(output,'EditorProject','standard')
     window.project,window.project_file=project,path
     window._loaded()
+    window.library_controller.new_group(name="Attack")
     window._failed=lambda message:setattr(window,'last_error',message)
     state={'phase':'import','started':time.monotonic(),'reports':{}}
     timer=QTimer(window);timer.setInterval(30)

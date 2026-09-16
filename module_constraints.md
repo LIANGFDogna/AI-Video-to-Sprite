@@ -55,3 +55,7 @@ models/character_reference.py只定义不可变几何/XY；core/character_refere
 
 ## Path Memory
 utils设置与路径服务无Qt/Project依赖；ui/dialogs是统一文件入口；FolderPicker复用服务，业务在成功回调commit，NewProject只在创建成功commit。
+
+
+## Phase 2A模块
+Library模型只管理UUID树/资源/状态；Workspace控制器协调现有动画快照与只读缓存；UI Tree不处理像素；GroupExport只复制最终产物和既有元数据。模型校验禁止环/孤儿资源/Project Root素材。

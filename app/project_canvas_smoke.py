@@ -80,6 +80,7 @@ def start_canvas_smoke(app, window, output):
                     x, y = w//2-300+10*i, h//2-200+4*i
                     pixels[y:y+100, x:x+80] = (230, 50, 80, 200)
                     save_rgba(folder / f'{i}.png', pixels)
+                window.library_controller.new_group(name="Mixed")
                 window.import_sequence(folder)
                 state["phase"] = "import"
             elif phase == "import":

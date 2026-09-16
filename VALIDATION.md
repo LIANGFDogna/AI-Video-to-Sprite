@@ -1,5 +1,19 @@
 # Validation record · v0.4
 
+## 2026-09-16：Group Workspace（正式发布）
+
+发布前完整回归：**222 passed，60.54 秒**（上一轮 219 项 + 本轮新增 3 项）；**796 keys** 中英键集、占位符与源码覆盖通过（`scripts/check_i18n.py`，包内与源码键集完全一致）。受保护算法基线：`GROUP_WORKSPACE_PLAN.md` 列出的 **30 个文件 SHA256 全部未变**，报告 `build/group-protected-hashes.json` 为 passed；本轮只新增 `app/models/project_library.py`、`app/core/group_export.py`、`app/ui/library_controller.py`、`app/ui/project_library.py`、`app/ui/group_export_dialog.py`、`app/group_smoke.py`。
+
+拖拽排序修复：Qt 落点给出的 index 以「含被拖动项的完整同级列表」为坐标，模型 `move_group` / `move_resource` 以「移除被拖动项之后」的列表为坐标。转换统一放在 UI 层（同容器且原位置在落点之前时 index-1），Group 与 Resource 共用同一函数，模型 index 语义保持不变。新增 UI 用例覆盖三种方向：A→B 下方 `[B,A,C]`、A→C 下方 `[B,C,A]`、C→A 上方 `[C,A,B]`，资源分支同样三种；另有导出后 Group 立即 READY、保存重开仍 READY 的用例。
+
+发布过程中发现并修复一项真实回归：新只读打开流程不再重新读取源文件，而脚本/旧工具生成的视频工程未持久化视频元数据（`frame_count=0`），导致重开后 `process_key` 等入口直接返回、keyed passthrough 冻结验收超时。现在仅当「视频输入且存储元数据缺失」时重新校验一次源以恢复元数据与缓存可用性；正常工程与序列帧工程仍保持只读打开，不执行 Decode / Key / Build。
+
+冻结 EXE 验收（候选 `release-v0.4-group-workspace-final`）：启动、示例 preview（normalized / character profile / sequence）、workspace、keyed passthrough、project canvas、editor、Character Reference（1.25 / 1.5）、Path/UI（1.0 / 1.25 / 1.5，各 449 次控件观测，两进程）、Group Workspace（两进程）全部 passed。Group 报告：多视频共存、序列与已有 Sheet 共存、切换零重处理、后台结果归属、树路径导出 4 项资源，`group_status_ready` / `restart_verified` / `restart_status_ready` 均为 true。
+
+正式 dist：`E:\AI Video to Sprite\dist\AI Video to Sprite\AI Video to Sprite.exe`，修改时间 2026-09-16 15:32:34，大小 5,548,524 字节，SHA256 `E1FDC021803B1D8E25B1E0D8B787C1B208A94379A94DDAE32EBFFAF4B9D738FF`。使用该 dist EXE 复跑 Group（两轮）、keyed、normalized / sequence 旧工程、editor 与三个 DPI Path 验收，全部 exit code 0。
+
+构建标识 `20260916-group-workspace`（v0.4.0）。
+
 ## 2026-09-16：Path Memory / UI Audit
 
 交付前完整回归：**191 passed，60.89秒**，`build/path-complete-regression.log`。新增28项（21项路径服务、7项窗口与业务接入），保留原163项测试。**705 keys**中英键集、占位符及源码覆盖通过。第一次完整回归发现直通模式Root/Motion字段重新启用，修正UI状态优先级后两次全量191项通过；未修改像素算法。31个core/models/exporters文件逐个SHA256等于PATH_MEMORY_PLAN.md基线，`build/path-protected-hashes.json`为passed。

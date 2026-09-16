@@ -80,3 +80,7 @@ V04_WORKSPACE_PLAN.md
 编辑器新增：models/timeline_edit.py、core/timeline_renderer.py、ui/frame_editor.py、ui/editor_timeline.py、ui/editor_canvas.py、ui/curve_editor.py；tests/test_editor_pipeline.py、tests/test_editor_ui.py；app/editor_smoke.py。
 
 Path Memory计划新增utils/app_settings.py、utils/path_memory.py；复用ui/dialogs.py与folder_picker.py，UI_AUDIT.md记录全部调用与按钮审查。
+
+
+## Phase 2A规划
+新增models/project_library.py、ui/library_controller.py、ui/project_library.py、core/group_export.py、ui/group_export_dialog.py及Group专项tests/smoke。

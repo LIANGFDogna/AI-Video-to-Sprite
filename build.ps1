@@ -172,7 +172,25 @@ try {
     $env:QT_SCREEN_SCALE_FACTORS = $spritePreviousScreenScale
     $env:QT_SCALE_FACTOR = $spritePreviousScale
 }
+$spriteGroupDirectory = Join-Path $PSScriptRoot ('build\group-smoke-' + [Guid]::NewGuid().ToString('N'))
+$spriteGroupSmoke = Start-Process -FilePath $spriteExecutable -ArgumentList @('--smoke-groups', ('"' + $spriteGroupDirectory + '"')) -WindowStyle Hidden -PassThru
+if (-not $spriteGroupSmoke.WaitForExit(180000)) {
+    $spriteGroupSmoke.Kill()
+    throw 'Packaged Group workspace / multi-animation export timed out.'
+}
+$spriteGroupSmoke.Refresh()
+if ($spriteGroupSmoke.ExitCode -ne 0) { throw "Packaged Group workspace failed ($($spriteGroupSmoke.ExitCode)). Check logs/app.log." }
+$spriteGroupVerify = Start-Process -FilePath $spriteExecutable -ArgumentList @('--smoke-groups', ('"' + $spriteGroupDirectory + '"'), '--verify-groups') -WindowStyle Hidden -PassThru
+if (-not $spriteGroupVerify.WaitForExit(120000)) {
+    $spriteGroupVerify.Kill()
+    throw 'Packaged Group restart verification timed out.'
+}
+$spriteGroupVerify.Refresh()
+if ($spriteGroupVerify.ExitCode -ne 0) { throw "Packaged Group restart verification failed ($($spriteGroupVerify.ExitCode)). Check logs/app.log." }
+$spriteGroupReport = Get-Content -LiteralPath (Join-Path $spriteGroupDirectory 'validation.json') -Raw | ConvertFrom-Json
+if ($spriteGroupReport.status -ne 'passed' -or -not $spriteGroupReport.restart_verified -or -not $spriteGroupReport.group_status_ready) { throw 'Missing Group acceptance result.' }
+
 $spritePathReports = & (Join-Path $PSScriptRoot 'scripts\verify_path_ui.ps1') -Executable $spriteExecutable
-$spriteReceipt = @{ status = 'passed'; build_version = '20260915-path-memory-ui-audit'; path_validation = $spritePathReports; reference_validation = $spriteReferenceReports; editor_validation = $spriteEditorReport; executable_sha256 = (Get-FileHash -LiteralPath $spriteExecutable -Algorithm SHA256).Hash; verified_at = (Get-Date).ToString('o') }
+$spriteReceipt = @{ status = 'passed'; build_version = '20260916-group-workspace'; path_validation = $spritePathReports; reference_validation = $spriteReferenceReports; group_validation = $spriteGroupReport; editor_validation = $spriteEditorReport; executable_sha256 = (Get-FileHash -LiteralPath $spriteExecutable -Algorithm SHA256).Hash; verified_at = (Get-Date).ToString('o') }
 $spriteReceipt | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $spriteReleaseDirectory 'release-validation.json') -Encoding UTF8
 Write-Host "Built $spriteExecutable. Video input uses FFmpeg; frame sequence input does not. All release checks passed."

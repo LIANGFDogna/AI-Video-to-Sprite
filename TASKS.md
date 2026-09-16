@@ -1,6 +1,17 @@
 # Tasks
 
-## Current — Path Memory / UI Audit
+## Current — Group Workspace（2026-09-16）
+
+- [x] 新增 `app/models/project_library.py`：UUID Group 树、多 Source / 多 Animation / 多 Sheet 所有权、每 Group/Animation UIState、状态机与严格校验。
+- [x] 新增 `app/ui/library_controller.py` 与 `app/ui/project_library.py`：常驻资源库树、搜索、Add/右键菜单、重命名/移动/移除/撤销、Group 媒体门禁与拖放导入。
+- [x] 新增 `app/core/group_export.py` 与 `app/ui/group_export_dialog.py`：树路径/平铺导出、就绪默认勾选、空组警告、原子发布且不覆盖既有输出。
+- [x] 修复 Group / Resource 向下拖动排序 off-by-one：UI 层转换落点 index，模型保持「移除后坐标」语义；UI 测试覆盖三个方向。
+- [x] 切换 Group 只恢复缓存与 UIState，不重新 Decode / Key / Build；后台任务携带 TaskContext，不抢占当前工作区。
+- [x] 旧工程迁移到 Imported Animations，动画参数、缓存 ID 与手动 Root 全部保留。
+- [x] 生成 Sheet 后 Group 立即 READY，保存重开后仍 READY（UI 测试 + 冻结 EXE smoke 覆盖）。
+- [x] 222 项全量测试与 i18n 796 keys 检查通过（最终数字见 VALIDATION.md）。
+
+## Completed — Path Memory / UI Audit
 
 - [x] 统一AppSettings原子合并与PathMemoryService；用途历史、全局最近位置及重启恢复。
 - [x] 按用户最终修正规则：新建父目录可自由更改、记住成功创建位置、Work按E→D→C→Home回退。

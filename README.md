@@ -1,5 +1,19 @@
 # AI Video to Sprite · v0.4
 
+## Group Workspace 项目资源库（2026-09-16）
+
+工作流从「一个工程一个动画」改为 **Project → Group → Import Media → Animation → Sprite Sheet → Group Export**。Group 是工作上下文：必须先创建并选中 Group 才能导入媒体；项目根节点（Project Root）不接受任何媒体，拖放同样会被拒绝并给出提示。
+
+一个 Group 可以同时容纳多个 Source（视频 / 序列帧 / 已有 Sprite Sheet）、多个 Animation 和多个 Sprite Sheet，互不覆盖；Animation 名称在同一 Group 内自动去重，不同父路径下允许同名。
+
+切换 Group 只恢复已有缓存结果与界面状态（当前 Animation、帧、时间线缩放与滚动、编辑页、预览参数、播放/洋葱皮/残影等），**不会重新 Decode / Key / Build**；缓存缺失时明确提示需要手动处理，不做隐式重算。后台任务携带不可变身份（project / group / animation），在别的 Group 完成时只归档到所属动画，不抢占当前工作区。
+
+左侧资源库树支持搜索、Add 菜单与右键菜单（新建 Group / 新建子 Group / 重命名 / 移除 Group / 移动到 Group / 导出 Group），以及 Group 与资源的拖拽重排；向下与向上拖动使用同一套 index 坐标转换，落点结果与指示线一致。移除 Group 只移除工程内的关系，永不删除外部文件；包含内容的 Group 只能先移到父 Group 或取消。
+
+批量导出保留 Group 目录层级（例如 `MainCharacter/Movement/Run/<Animation>/`），同名 Group / Animation 在不同父路径下不冲突；已存在同名顶层输出目录时拒绝覆盖，失败或取消不留下半成品。空组或仅含源素材的 Group 默认不勾选并给出警告。生成新的 Sprite Sheet 后 Group 状态立即同步为 READY，保存重开后仍为 READY。
+
+构建标识：`20260916-group-workspace`（版本 v0.4.0，与 `app/__init__.py` 一致）。请求与边界见 `GROUP_WORKSPACE_PLAN.md`，逐项验收数字见 `VALIDATION.md`。
+
 ## 路径记忆与窗口审查（2026-09-16）
 
 正式程序 `dist/AI Video to Sprite/AI Video to Sprite.exe` 已于2026-09-16更新并完成实际启动/重启验收。构建标识 `20260915-path-memory-ui-audit`。新建项目的父目录始终可输入或点击“选择项目目录”更改，支持任意有权限的本地盘或网络目录。默认优先上次**成功创建项目**的父目录；该目录失效后直接回到默认工作区。工作区依次尝试 `E:/AI Video to Sprite/work`、D盘同路径、C盘同路径，均不可用才回退用户Home。Work只是起始位置，不限制素材或项目的存放位置。

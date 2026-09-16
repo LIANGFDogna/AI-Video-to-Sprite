@@ -170,6 +170,7 @@ def start_path_smoke(app,window,output,verify=False):
                 QTest.keyClick(d.name,Qt.Key.Key_Return);assert not (folders['project']/'MainCharacter').exists()
                 d.create_button.click();advance('video')
             elif phase=='video':
+                window.library_controller.new_group(name='Idle')
                 assert window.project_file==folders['project']/'MainCharacter/MainCharacter.aivsprite'
                 choose_file(window.choose_video,'video_import',folders['video']/'Idle.mp4');advance('video_reopen')
             elif phase=='video_reopen':
@@ -237,8 +238,10 @@ def start_path_smoke(app,window,output,verify=False):
                 window.new_project();d=window.new_project_dialog
                 assert Path(d.directory.text())==folders['project'];footer_matrix(d);d.reject();advance('verify_dialogs')
             elif phase=='verify_dialogs':
+                choose_file(window.open_project,'project_open',Path(expected['project']));advance('verify_import_dialogs')
+            elif phase=='verify_import_dialogs':
                 choose_file(window.choose_video,'video_import');choose_folder(window.choose_sequence,'image_sequence_import')
-                choose_file(window.open_project,'project_open',Path(expected['project']));advance('verify_export')
+                advance('verify_export')
             elif phase=='verify_export':
                 if not window.built:return
                 choose_folder(lambda:window.choose_export('sheet'),'sprite_sheet_export')

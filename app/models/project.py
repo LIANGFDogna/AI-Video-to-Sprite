@@ -13,10 +13,12 @@ from app.models.frame_data import CellLayout, FrameData
 from app.models.character_profile import CharacterProfile
 from app.models.timeline_edit import TimelineEdit
 from app.models.character_reference import CharacterReference, AnimationTransform
+from app.models.project_library import ProjectLibrary
 
 ALIGNMENT_MODES = ("ROOT XY LOCK", "GROUND LOCK", "ROOT X + GROUND Y")
 PROJECT_FIELDS = ("project_name", "project_version", "project_type", "default_fps", "source_canvas", "output_canvas",
                   "project_canvas_width", "project_canvas_height", "canvas_fit_mode", "character_reference")
+PROJECT_STATE_FIELDS = ("library", "current_group_id")
 
 
 @dataclass
@@ -137,6 +139,8 @@ class Project:
     timeline_edit: TimelineEdit = field(default_factory=TimelineEdit)
     final_frames: list[FrameData] = field(default_factory=list)
     final_timing: list[dict] = field(default_factory=list)
+    library: ProjectLibrary = field(default_factory=ProjectLibrary)
+    current_group_id: str | None = None
 
     @property
     def has_final_edits(self):
@@ -159,6 +163,9 @@ class Project:
 
     def project_metadata(self):
         return {name: copy.deepcopy(getattr(self, name)) for name in PROJECT_FIELDS}
+
+    def project_context(self):
+        return {**self.project_metadata(), **{name: copy.deepcopy(getattr(self, name)) for name in PROJECT_STATE_FIELDS}}
 
     @property
     def is_passthrough(self):
@@ -194,6 +201,9 @@ class Project:
             self.video.duration = self.video.frame_count / self.sequence_fps
 
     def validate(self) -> None:
+        self.library.validate()
+        if self.current_group_id is not None and self.current_group_id not in self.library.groups:
+            raise ValueError("Selected Group does not exist")
         self.timeline_edit.validate(self.video.frame_count)
         AnimationTransform.from_dict(self.animation_transform)
         if self.character_reference:self.character_reference.validate()
@@ -279,6 +289,7 @@ class Project:
                 raise ValueError("Invalid root keyframe")
 
     def save(self, path: Path) -> None:
+        self.ensure_library()
         self.validate()
         self.sync_sequence_timing()
         path = Path(path).resolve()
@@ -290,6 +301,12 @@ class Project:
                         animation[field_name] = os.path.relpath(animation[field_name], path.parent)
                     except ValueError:
                         pass
+        for resource in data["library"]["resources"].values():
+            if resource.get("path"):
+                try:
+                    resource["path"] = os.path.relpath(resource["path"], path.parent)
+                except ValueError:
+                    pass
         data.update(fps=self.video.fps, frame_count=self.video.frame_count,
                     green_color=list(self.chroma_key_settings.green_color), padding=self.sprite_cell.padding)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -307,11 +324,16 @@ class Project:
             for field_name in ("source_video", "sequence_folder"):
                 if animation.get(field_name):
                     animation[field_name] = str((path.parent / animation[field_name]).resolve())
+        for resource in data.get("library", {}).get("resources", {}).values():
+            if resource.get("path"):
+                resource["path"] = str((path.parent / resource["path"]).resolve())
         return cls.from_dict(data)
 
     @classmethod
     def from_dict(cls, data):
         data = copy.deepcopy(data)
+        legacy_library = "library" not in data
+        data["library"] = ProjectLibrary.from_dict(data.get("library"))
         if data.get("animations") == []:
             data["animations"] = {}
         for name in ("source_canvas", "output_canvas", "original_size"):
@@ -336,6 +358,8 @@ class Project:
         data["layout"] = CellLayout(**data["layout"]) if data.get("layout") else None
         data["character_profile"] = CharacterProfile.from_dict(data["character_profile"]) if data.get("character_profile") else None
         project = cls(**data)
+        if legacy_library:
+            project.ensure_library()
         if project.is_keyed_passthrough and project.sprite_cell.canvas_mode == "auto_bounds":
             project.sprite_cell.canvas_mode = "source_canvas"
         project.validate()
@@ -344,7 +368,7 @@ class Project:
 
     def animation_snapshot(self):
         data = asdict(self)
-        for key in ("schema_version", "project_id", "character_profile", "animation_id", "animations", *PROJECT_FIELDS):
+        for key in ("schema_version", "project_id", "character_profile", "animation_id", "animations", *PROJECT_FIELDS, *PROJECT_STATE_FIELDS):
             data.pop(key)
         return data
 
@@ -354,7 +378,7 @@ class Project:
         if self.source_path:
             archive[self.animation_id] = self.animation_snapshot()
         result = Project(project_id=self.project_id, source_video=str(path.resolve()), character_profile=self.character_profile,
-                         animation_id=uuid.uuid4().hex, animations=archive, **self.project_metadata())
+                         animation_id=uuid.uuid4().hex, animations=archive, **self.project_context())
         result.chroma_key_settings = copy.deepcopy(self.chroma_key_settings)
         result.motion_settings.enabled = True
         result.export_settings.animation_name = path.stem
@@ -368,6 +392,10 @@ class Project:
             result.sprite_cell.target_width, result.sprite_cell.target_height = self.character_profile.canvas_size
         if self.character_reference:
             result.set_processing_mode("keyed_passthrough")
+        if result.current_group_id in result.library.groups:
+            resource = result.library.add_source_animation(result.current_group_id, result.animation_id,
+                result.export_settings.animation_name, result.source_video, "SOURCE_VIDEO")
+            result.export_settings.animation_name = resource.name
         return result
 
     def import_frame_sequence(self, folder: Path, fps=None, passthrough=True, size_policy="strict"):
@@ -378,6 +406,10 @@ class Project:
         result.sequence_folder = str(folder.resolve())
         result.sequence_fps = float(self.default_fps if fps is None else fps)
         result.sequence_size_policy = size_policy
+        owner = result.library.animation(result.animation_id)
+        if owner:
+            source = result.library.resources[owner.source_id]
+            source.kind, source.path = "SOURCE_SEQUENCE", result.sequence_folder
         result.passthrough_alignment = bool(passthrough)
         if passthrough:
             result.alignment_mode = "passthrough"
@@ -393,5 +425,63 @@ class Project:
         if self.source_path:
             archive[self.animation_id] = self.animation_snapshot()
         selected.update(project_id=self.project_id, animation_id=animation_id, animations=archive,
-                        character_profile=asdict(self.character_profile) if self.character_profile else None, **self.project_metadata())
-        return Project.from_dict(selected)
+                        character_profile=asdict(self.character_profile) if self.character_profile else None, **self.project_context())
+        result = Project.from_dict(selected)
+        owner = result.library.animation(animation_id)
+        if owner:
+            result.current_group_id = owner.group_id
+        return result
+
+
+    def all_animation_snapshots(self):
+        result = copy.deepcopy(self.animations)
+        if self.source_path:
+            result[self.animation_id] = self.animation_snapshot()
+        return result
+
+    def ensure_library(self):
+        """Migrate legacy content without changing animation parameters or cache IDs."""
+        snapshots = self.all_animation_snapshots()
+        if not snapshots:
+            return
+        if not self.library.groups:
+            group = self.library.add_group("Imported Animations")
+            self.current_group_id = group.id
+        fallback = self.current_group_id if self.current_group_id in self.library.groups else next(iter(self.library.groups))
+        for ident, data in snapshots.items():
+            if self.library.animation(ident):
+                continue
+            sequence = data.get("input_mode") == "frame_sequence"
+            path = data.get("sequence_folder" if sequence else "source_video", "")
+            if not path:
+                continue
+            self.library.add_source_animation(fallback, ident,
+                data.get("export_settings", {}).get("animation_name", "Animation"), path,
+                "SOURCE_SEQUENCE" if sequence else "SOURCE_VIDEO")
+            if data.get("layout"):
+                self.library.mark_generated(ident)
+        active = self.library.animation(self.animation_id) if self.source_path else None
+        if active:
+            self.current_group_id = active.group_id
+            if not self.library.groups[active.group_id].ui_state.animation_id:
+                self.library.groups[active.group_id].ui_state.animation_id = self.animation_id
+
+    def empty_context(self, group_id=None):
+        """Keep every animation while showing an empty Group or the Project Root."""
+        result = Project(project_id=self.project_id, character_profile=self.character_profile,
+                         animations=self.all_animation_snapshots(), **self.project_context())
+        result.current_group_id = group_id
+        return result
+
+    def merge_animation_result(self, result):
+        """Commit only the task's animation; project-wide state remains authoritative."""
+        if result.project_id != self.project_id:
+            raise ValueError("Background task belongs to another Project")
+        if self.library.animation(result.animation_id) is None:
+            raise ValueError("Background task Animation no longer exists")
+        if result.animation_id == self.animation_id and self.source_path:
+            data = asdict(self)
+            data.update(result.animation_snapshot())
+            return Project.from_dict(data)
+        self.animations[result.animation_id] = result.animation_snapshot()
+        return self

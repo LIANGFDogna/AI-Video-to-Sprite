@@ -97,6 +97,8 @@ def test_file_picker_purpose_sidebar_cancel_and_save_filename(qt,tmp_path,monkey
 
 def test_success_sequence_export_save_as_and_failure_do_not_pollute(qt,tmp_path,monkeypatch):
     w=MainWindow(tmp_path/'app.log');w.show()
+    w.project.project_name='PathTest'
+    w.library_controller.new_group(name='Idle')
     folder=tmp_path/'中文 素材/Idle';folder.mkdir(parents=True)
     Image.fromarray(np.full((24,24,4),(100,70,20,128),np.uint8)).save(folder/'0.png')
     try:
