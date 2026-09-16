@@ -55,3 +55,5 @@ desktop.ini
 # Test generated output
 .test-output/
 before_fix_environment.md
+# ComfyUI audit artifacts (task-local)
+comfyui_*
