@@ -56,16 +56,33 @@ def safe_component(value, fallback="Group"):
     return sanitize_project_name(value) or fallback
 
 
+def character_prefix(library, group):
+    "Character nodes are part of the export path; loose Groups stay at the top level."
+    if group.character_id is None:
+        return None
+    character = library.characters.get(group.character_id)
+    if character is None:
+        return None
+    return safe_component(character.name, "Character")
+
+
 def group_disk_paths(library, preserve_tree=True):
     paths = {}
-    def visit(parent_id=None, parent=Path()):
+
+    def visit(groups, root):
         names = []
-        for group in library.children(parent_id):
+        for group in groups:
             component = unique_name(safe_component(group.name), names, "_")
             names.append(component)
-            paths[group.id] = parent / component
-            visit(group.id, paths[group.id])
-    visit()
+            paths[group.id] = root / component
+            visit(library.children(group.id), root / component)
+
+    prefixes = []
+    for character in library.characters.values():
+        prefix = unique_name(safe_component(character.name, "Character"), prefixes, "_")
+        prefixes.append(prefix)
+        visit(library.character_roots(character.id), Path(prefix))
+    visit(library.loose_roots(), Path())
     if not preserve_tree:
         used = []
         for ident, path in paths.items():

@@ -76,3 +76,6 @@
 
 ## Phase 2A验收
 模型树/多源多动画多Sheet、旧迁移、UIState、Group媒体门禁/拖放、CRUD及Undo、无Reprocess、后台跨Group结果、树路径导出/空组/同名/非法字符/取消、中文及125/150%、全量旧测试、正式dist验收。
+
+## Phase 2B验收
+新增 20 项：空角色、三套模板 Group 树（39/7/15）、模板 ID/版本持久化、Group character_id、Loose Group、跨角色移动保留 Offset 与标记、角色基准独立与不串、基准必须属于本角色、基准动画移动保护、删除角色移入 Loose、重命名保持 ID、旧工程基准迁移、无基准旧工程迁移、TaskContext.character_id、导出路径含角色、中文名称、搜索、计数。冻结 EXE：Character smoke 两进程（模板建树/基准隔离/跨角色移动/导出路径/重启校验）；DPI 100/125/150 沿用 Path 验收。

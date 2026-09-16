@@ -99,3 +99,6 @@
 
 ## Phase 2A前置审查
 当前_select_animation会导入/构建，旧success闭包直接覆盖self.project，_loaded重置Frame。均是单上下文假设，在多Group中形成串数据风险；采用UUID任务上下文、只读缓存恢复和Library控制器，不改核心算法。
+
+## Phase 2B审查
+模板数据类：模板建树曾按父级名称复用其他角色的同名 Group（Player/Boss 都应有 Idle），已限定为同角色复用；同级名称唯一性与排序已按角色分桶。数据流类：基准保存曾把已构建 Sheet 的 ready 清空（_invalidate_reviews 默认参数），已按"仅模式切换才失效"收窄。文件路径类：导出路径曾全局去重导致角色内 Idle 变成 Idle_2，已改为按角色分桶后各自去重。

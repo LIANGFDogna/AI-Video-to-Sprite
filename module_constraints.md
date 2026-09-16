@@ -59,3 +59,6 @@ utils设置与路径服务无Qt/Project依赖；ui/dialogs是统一文件入口�
 
 ## Phase 2A模块
 Library模型只管理UUID树/资源/状态；Workspace控制器协调现有动画快照与只读缓存；UI Tree不处理像素；GroupExport只复制最终产物和既有元数据。模型校验禁止环/孤儿资源/Project Root素材。
+
+## Phase 2B模块
+models/character_templates.py 只含模板数据与建树函数，不含任何 UI 分支；models/project_library.py 负责 Character/Group 归属与校验；ui/character_panel.py、ui/character_dialogs.py 只做展示与输入；ui/project_library.py 只做树与拖放。Project.character_reference 仅是当前角色镜像，保存始终写角色级。

@@ -84,3 +84,6 @@ Path Memory计划新增utils/app_settings.py、utils/path_memory.py；复用ui/d
 
 ## Phase 2A规划
 新增models/project_library.py、ui/library_controller.py、ui/project_library.py、core/group_export.py、ui/group_export_dialog.py及Group专项tests/smoke。
+
+## Phase 2B规划
+新增 models/character_templates.py、ui/character_panel.py、ui/character_dialogs.py、app/character_smoke.py、tests/test_character_workspace.py；扩展 models/project_library.py、models/project.py、ui/project_library.py、ui/library_controller.py、core/group_export.py、main.py、build.ps1。

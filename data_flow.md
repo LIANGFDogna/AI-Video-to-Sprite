@@ -49,3 +49,6 @@ AppSettings.path_state→PathMemory.resolve(purpose,project)→统一Qt Picker�
 
 ## Phase 2A数据流
 Add菜单/Group拖放→捕获Group UUID→Source+Animation独立身份→既有Pipeline→按TaskContext合并动画结果→生成Sheet资源。点击Group→保存旧UI状态→快照选择→只读缓存→恢复UI。批量导出→选定UUID→树路径预规划→已有Sheet/Animation JSON/Root JSON→无覆盖输出。
+
+## Phase 2B数据流
+新建角色 → 模板注册表 → 一次性创建 Group 树 → 角色自动选中。Group 拖到 Character/Loose → set_group_character → 基准校验 → 标记 Alignment Review Required → 保存角色级归属。角色切换 → 只切换树/工作区/基准上下文。后台任务 → TaskContext(project,character,group,animation) → 结果只归档所属动画。导出 → 角色名前缀 + 角色内 Group 树路径。

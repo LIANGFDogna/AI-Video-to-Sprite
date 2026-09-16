@@ -1,6 +1,18 @@
 # Tasks
 
-## Current — Group Workspace（2026-09-16）
+## Current — Character + Character Template（Phase 2B，2026-09-16）
+
+- [x] 新增 `Character` 模型与角色级 Character Reference ownership（含 `Default Character` 旧工程迁移）。
+- [x] 新增 `app/models/character_templates.py` 模板注册表：空白 / 类银河城玩家 / 普通敌人 / Boss，数据驱动、含 `semantic_type` 预留。
+- [x] 左侧资源库树改为 Project → Characters（角色图标/加粗）→ Group 树 → Loose Groups；角色显示递归 Animation 数，可搜索。
+- [x] Add 菜单与角色右键菜单：新建角色 / 新建 Group / 新建子 Group / 设置·编辑角色坐标基准 / 重命名 / 删除。
+- [x] Group 拖到 Character 或 Loose Groups 改变归属；跨角色移动保留全部 Offset / 帧 / Sheet，并标记 Alignment Review Required。
+- [x] 基准动画跨角色移动时阻止悬空引用，可选择「清除角色基准并移动」。
+- [x] `TaskContext` 加入 `character_id`，后台结果按四元身份归档。
+- [x] 导出路径包含角色节点（`Export/Player/Movement/Run/...`），同名 Group 分属不同角色不再改名。
+- [x] 242 项全量测试、843 条中英翻译键、Character/Group/Path/Editor/Keyed/旧工程 smoke、三个 DPI 全部通过；正式 dist 发布与 SHA256 记录见 VALIDATION.md。
+
+## Completed — Group Workspace（2026-09-16）
 
 - [x] 新增 `app/models/project_library.py`：UUID Group 树、多 Source / 多 Animation / 多 Sheet 所有权、每 Group/Animation UIState、状态机与严格校验。
 - [x] 新增 `app/ui/library_controller.py` 与 `app/ui/project_library.py`：常驻资源库树、搜索、Add/右键菜单、重命名/移动/移除/撤销、Group 媒体门禁与拖放导入。

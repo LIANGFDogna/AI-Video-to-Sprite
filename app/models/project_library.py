@@ -2,8 +2,11 @@
 from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 import copy
+import datetime
 import math
 import uuid
+
+from app.models.character_reference import CharacterReference
 
 SOURCE_KINDS = {"SOURCE_VIDEO", "SOURCE_SEQUENCE", "SOURCE_SPRITE_SHEET"}
 RESOURCE_KINDS = SOURCE_KINDS | {"ANIMATION", "GENERATED_SPRITE_SHEET"}
@@ -72,6 +75,25 @@ class Group:
     status: str = "EMPTY"
     ui_state: WorkspaceState = field(default_factory=WorkspaceState)
     animation_states: dict[str, WorkspaceState] = field(default_factory=dict)
+    character_id: str | None = None
+    semantic_type: str = ""
+    alignment_review_required: bool = False
+
+
+def now_stamp():
+    return datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+@dataclass
+class Character:
+    name: str
+    id: str = field(default_factory=new_id)
+    template_id: str = "blank"
+    template_version: int = 1
+    character_reference: CharacterReference | None = None
+    group_ids: list[str] = field(default_factory=list)
+    created_at: str = field(default_factory=now_stamp)
+    modified_at: str = field(default_factory=now_stamp)
 
 
 @dataclass
@@ -95,6 +117,7 @@ class TaskContext:
     group_id: str | None
     animation_id: str
     operation: str
+    character_id: str | None = None
 
 
 @dataclass
@@ -102,6 +125,7 @@ class ProjectLibrary:
     version: int = 1
     groups: dict[str, Group] = field(default_factory=dict)
     resources: dict[str, LibraryResource] = field(default_factory=dict)
+    characters: dict[str, Character] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data):
@@ -113,7 +137,13 @@ class ProjectLibrary:
             value["ui_state"] = WorkspaceState.from_dict(value.get("ui_state"))
             value["animation_states"] = {k: WorkspaceState.from_dict(v) for k, v in value.get("animation_states", {}).items()}
             groups[ident] = Group(**value)
-        result = cls(data.get("version", 1), groups, {k: LibraryResource(**v) for k, v in data.get("resources", {}).items()})
+        characters = {}
+        for ident, value in data.get("characters", {}).items():
+            value = copy.deepcopy(value)
+            value["character_reference"] = CharacterReference.from_dict(value.get("character_reference"))
+            characters[ident] = Character(**value)
+        result = cls(data.get("version", 1), groups, {k: LibraryResource(**v) for k, v in data.get("resources", {}).items()}, characters)
+        result.refresh_character_groups()
         result.validate()
         return result
 
@@ -129,7 +159,7 @@ class ProjectLibrary:
             WorkspaceState.from_dict(group.ui_state)
         names = set()
         for group in self.groups.values():
-            key = group.parent_id, group.name.casefold()
+            key = group.parent_id, group.character_id, group.name.casefold()
             if key in names:
                 raise ValueError("Sibling Group names must be unique")
             names.add(key)
@@ -154,6 +184,40 @@ class ProjectLibrary:
             selected = group.ui_state.animation_id
             if selected and (selected not in animations or animations[selected].group_id != group.id):
                 raise ValueError("Selected Animation does not belong to the Group")
+        for ident, character in self.characters.items():
+            if not valid_id(ident) or ident != character.id or not character.name.strip():
+                raise ValueError("Invalid Character")
+            if not character.template_id.strip() or not isinstance(character.template_version, int) or character.template_version < 1:
+                raise ValueError("Invalid Character template")
+        names = set()
+        for character in self.characters.values():
+            if character.name.casefold() in names:
+                raise ValueError("Character names must be unique")
+            names.add(character.name.casefold())
+        for group in self.groups.values():
+            if group.character_id is not None and group.character_id not in self.characters:
+                raise ValueError("Group Character does not exist")
+            if group.parent_id is not None and self.groups[group.parent_id].character_id != group.character_id:
+                raise ValueError("Nested Groups must belong to the same Character")
+            if not isinstance(group.semantic_type, str):
+                raise ValueError("Invalid Group metadata")
+        for ident, character in self.characters.items():
+            members = {g.id for g in self.groups.values() if g.character_id == ident}
+            if set(character.group_ids) != members:
+                raise ValueError("Character Group index is stale")
+            reference = character.character_reference
+            if reference is not None:
+                owner = next((r for r in self.resources.values()
+                    if r.kind == "ANIMATION" and r.animation_id == reference.reference_animation_id), None)
+                if owner is None or self.groups[owner.group_id].character_id != ident:
+                    raise ValueError("Character Reference animation must belong to the same Character")
+
+    def ordered_children(self, parent_id=None, character_id=None):
+        "Siblings inside one Character tree; top-level rows are scoped per Character."
+        rows = self.children(parent_id)
+        if parent_id is None:
+            rows = [group for group in rows if group.character_id == character_id]
+        return rows
 
     def children(self, parent_id=None):
         return sorted((g for g in self.groups.values() if g.parent_id == parent_id), key=lambda g: (g.order, g.id))
@@ -176,33 +240,46 @@ class ProjectLibrary:
             result.extend(self.descendants(group.id))
         return result
 
-    def add_group(self, name, parent_id=None, index=None):
+    def add_group(self, name, parent_id=None, index=None, character_id=None, semantic_type=""):
         if parent_id is not None and parent_id not in self.groups:
             raise ValueError("Please create a Group first")
-        siblings = self.children(parent_id)
-        group = Group(unique_name(name, [g.name for g in siblings]), parent_id=parent_id, order=len(siblings))
+        parent = self.groups[parent_id] if parent_id is not None else None
+        owner = parent.character_id if parent is not None else character_id
+        if owner is not None and owner not in self.characters:
+            raise ValueError("Character does not exist")
+        siblings = self.ordered_children(parent_id, owner)
+        group = Group(unique_name(name, [g.name for g in siblings]), parent_id=parent_id, order=len(siblings),
+                      character_id=owner, semantic_type=semantic_type)
         self.groups[group.id] = group
         if index is not None:
             self.move_group(group.id, parent_id, index)
+        self.refresh_character_groups()
         return group
 
     def rename_group(self, ident, name):
         group = self.groups[ident]
-        group.name = unique_name(name, [g.name for g in self.children(group.parent_id) if g.id != ident])
+        group.name = unique_name(name, [g.name for g in self.ordered_children(group.parent_id, group.character_id) if g.id != ident])
         return group.name
 
-    def move_group(self, ident, parent_id, index=None):
+    def move_group(self, ident, parent_id, index=None, clear_references=False):
         if parent_id is not None and parent_id not in self.groups:
             raise ValueError("Group parent does not exist")
         if parent_id in self.descendants(ident):
             raise ValueError("Cannot move a Group into itself or its children")
+        owner = self.groups[parent_id].character_id if parent_id is not None else self.groups[ident].character_id
+        previous = self.groups[ident].character_id
+        self.check_reference_move(ident, owner, clear_references)
         group = self.groups[ident]
-        siblings = [g for g in self.children(parent_id) if g.id != ident]
+        siblings = [g for g in self.ordered_children(parent_id, owner) if g.id != ident]
         group.name = unique_name(group.name, [g.name for g in siblings])
         group.parent_id = parent_id
         siblings.insert(len(siblings) if index is None else max(0, min(index, len(siblings))), group)
         for order, item in enumerate(siblings):
             item.order = order
+        self.reassign_character(ident, owner)
+        if previous != owner:
+            self.mark_alignment_review(ident)
+        self.refresh_character_groups()
 
     def in_group(self, group_id, recursive=False, kinds=None):
         ids = set(self.descendants(group_id) if recursive else [group_id])
@@ -276,6 +353,90 @@ class ProjectLibrary:
                 self.groups[target_group].animation_states[row.animation_id] = saved
         self.refresh_status()
 
+    def reassign_character(self, group_id, character_id):
+        "Apply ownership to a Group and every descendant without touching pixels or offsets."
+        for member in self.descendants(group_id):
+            self.groups[member].character_id = character_id
+        self.refresh_character_groups()
+
+    def reference_characters_for(self, group_id):
+        "Characters whose Reference Animation lives inside this Group subtree."
+        members = set(self.descendants(group_id))
+        owners = {r.animation_id for r in self.resources.values() if r.kind == "ANIMATION" and r.group_id in members}
+        return [character for character in self.characters.values()
+                if character.character_reference and character.character_reference.reference_animation_id in owners]
+
+    def check_reference_move(self, group_id, character_id, clear_references=False):
+        blocking = [character for character in self.reference_characters_for(group_id) if character.id != character_id]
+        if blocking and not clear_references:
+            raise ValueError("Animation is the Character Reference")
+        for character in blocking:
+            character.character_reference = None
+            character.modified_at = now_stamp()
+        return blocking
+
+    def mark_alignment_review(self, group_id):
+        "Ownership changes keep every offset but require a manual alignment review."
+        for member in self.descendants(group_id):
+            self.groups[member].alignment_review_required = True
+
+    def set_group_character(self, group_id, character_id, clear_references=False):
+        if character_id is not None and character_id not in self.characters:
+            raise ValueError("Character does not exist")
+        previous = self.groups[group_id].character_id
+        self.check_reference_move(group_id, character_id, clear_references)
+        self.reassign_character(group_id, character_id)
+        if previous != character_id:
+            self.mark_alignment_review(group_id)
+        if character_id is not None:
+            self.characters[character_id].modified_at = now_stamp()
+
+    def refresh_character_groups(self):
+        for ident, character in self.characters.items():
+            character.group_ids = sorted(g.id for g in self.groups.values() if g.character_id == ident)
+        return self
+
+    def add_character(self, name, template_id="blank", template_version=1, reference=None):
+        character = Character(unique_name(name, [c.name for c in self.characters.values()]),
+            template_id=template_id, template_version=template_version, character_reference=reference)
+        self.characters[character.id] = character
+        return character
+
+    def rename_character(self, ident, name):
+        character = self.characters[ident]
+        character.name = unique_name(name, [c.name for c in self.characters.values() if c.id != ident])
+        character.modified_at = now_stamp()
+        return character.name
+
+    def remove_character(self, ident, move_to_loose=True):
+        character = self.characters[ident]
+        roots = [g.id for g in self.children(None) if g.character_id == ident]
+        if roots and not move_to_loose:
+            raise ValueError("Character contains Groups")
+        for group_id in roots:
+            self.reassign_character(group_id, None)
+        character.character_reference = None
+        del self.characters[ident]
+        self.refresh_character_groups()
+
+    def character_roots(self, ident):
+        return [g for g in self.children(None) if g.character_id == ident]
+
+    def loose_roots(self):
+        return [g for g in self.children(None) if g.character_id is None]
+
+    def character_members(self, ident):
+        return [g for g in self.groups.values() if g.character_id == ident]
+
+    def character_animation_count(self, ident):
+        return sum(len(self.in_group(group.id, True, {"ANIMATION"})) for group in self.character_roots(ident))
+
+    def character_for_animation(self, animation_id):
+        owner = self.animation(animation_id)
+        if owner is None:
+            return None
+        return self.characters.get(self.groups[owner.group_id].character_id)
+
     def remove_group(self, ident, move_to_parent=False):
         group = self.groups[ident]
         contents = self.in_group(ident)
@@ -290,6 +451,7 @@ class ProjectLibrary:
             for child in children:
                 self.move_group(child.id, group.parent_id)
         del self.groups[ident]
+        self.refresh_character_groups()
         self.refresh_status()
 
     def refresh_status(self, processing=()):

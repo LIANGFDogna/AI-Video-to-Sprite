@@ -3,8 +3,9 @@ import json
 from PySide6.QtCore import Qt, QMimeData
 from PySide6.QtGui import QDrag, QColor
 from PySide6.QtWidgets import (QWidget,QVBoxLayout,QHBoxLayout,QLineEdit,QLabel,QPushButton,
-    QTreeWidget,QTreeWidgetItem,QMenu,QAbstractItemView,QInputDialog)
+    QTreeWidget,QTreeWidgetItem,QMenu,QAbstractItemView,QInputDialog,QStyle)
 from app.i18n import t
+from app.ui.character_panel import character_label
 
 ROLE=Qt.ItemDataRole.UserRole
 MIME='application/x-aivsprite-library'
@@ -72,9 +73,13 @@ class LibraryTree(QTreeWidget):
         position=self.dropIndicatorPosition()
         adjacent=position in (QAbstractItemView.DropIndicatorPosition.AboveItem,QAbstractItemView.DropIndicatorPosition.BelowItem)
         if dragged_kind=='GROUP':
+            if kind=='CHARACTER':
+                control.move_to_character(dragged_id,ident);event.acceptProposedAction();return
+            if kind in ('LOOSE','CHARACTERS'):
+                control.move_to_character(dragged_id,None);event.acceptProposedAction();return
             if kind=='GROUP' and adjacent:
                 target=lib.groups[ident].parent_id
-                siblings=lib.children(target);index=next(i for i,g in enumerate(siblings) if g.id==ident)+(position==QAbstractItemView.DropIndicatorPosition.BelowItem)
+                siblings=lib.ordered_children(target,lib.groups[ident].character_id);index=next(i for i,g in enumerate(siblings) if g.id==ident)+(position==QAbstractItemView.DropIndicatorPosition.BelowItem)
             elif kind in ('PROJECT','GROUP'):target=ident if kind=='GROUP' else None
             else:event.ignore();return
         else:
@@ -95,7 +100,8 @@ class ProjectLibraryPanel(QWidget):
         self.add_button=QPushButton(t('＋ Add'));self.add_button.setObjectName('primary');self.add_button.setAutoDefault(False)
         self.menu=QMenu(self.add_button);self.actions={}
         callbacks=[('New Project',host.new_project),('Open Project',host.open_project),
-            ('New Group',lambda:controller.new_group()),('New Subgroup',lambda:controller.new_group(host.project.current_group_id)),
+            ('New Character',lambda:controller.new_character()),
+            ('New Group',lambda:controller.new_group()),('New Subgroup',lambda:controller.new_subgroup()),
             ('Import Video',host.choose_video),('Import Frame Sequence',host.choose_sequence),('Import Sprite Sheet',controller.choose_sheet),
             ('Export Group',lambda:controller.export_groups()),('Batch Export',lambda:controller.export_groups(True))]
         for label,callback in callbacks:
@@ -111,8 +117,9 @@ class ProjectLibraryPanel(QWidget):
         h=self.host;idle=not h.interaction_busy;selected=self.controller.can_import
         for label,action in self.actions.items():
             enabled=idle
-            if label=='New Group':enabled &= self.controller.available
-            elif label in ('New Subgroup','Import Video','Import Frame Sequence','Import Sprite Sheet','Export Group'):enabled &= selected
+            if label in ('New Character','New Group'):enabled &= self.controller.available
+            elif label in ('Import Video','Import Frame Sequence','Import Sprite Sheet','Export Group'):enabled &= selected
+            elif label=='New Subgroup':enabled &= bool(h.project.current_group_id)
             elif label=='Batch Export':enabled &= bool(h.project.library.groups)
             action.setEnabled(enabled)
 
@@ -123,29 +130,58 @@ class ProjectLibraryPanel(QWidget):
         root=QTreeWidgetItem([p.project_name or t('Project'),str(sum(1 for r in lib.resources.values() if r.kind=='ANIMATION'))])
         root.setData(0,ROLE,('PROJECT',None));root.setToolTip(0,t('Project Root cannot contain media.'))
         self.tree.addTopLevelItem(root);self.items[('PROJECT',None)]=root;root.setExpanded(True)
-        def add_groups(parent,parent_id):
-            for g in lib.children(parent_id):
-                item=QTreeWidgetItem([g.name+'  · '+t(g.status),str(lib.animation_count(g.id))]);item.setData(0,ROLE,('GROUP',g.id))
-                item.setToolTip(0,' / '.join(v.name for v in lib.path(g.id))+'\n'+t(g.status))
-                item.setForeground(0,QColor('#efcc75' if g.status=='WARNING' else '#65dbbb' if g.status=='READY' else '#ecf2fc'))
-                parent.addChild(item);self.items[('GROUP',g.id)]=item
-                add_groups(item,g.id)
-                for r in lib.in_group(g.id):
-                    if r.kind=='GENERATED_SPRITE_SHEET':continue
-                    row=QTreeWidgetItem([t(r.kind)+' · '+r.name,'']);row.setData(0,ROLE,('RESOURCE',r.id));row.setToolTip(0,r.name+'\n'+r.path)
-                    item.addChild(row);self.items[('RESOURCE',r.id)]=row
-                    if r.kind=='ANIMATION':
-                        for sheet in lib.in_group(g.id,kinds={'GENERATED_SPRITE_SHEET'}):
-                            if sheet.animation_id==r.animation_id:
-                                child=QTreeWidgetItem([t('GENERATED_SPRITE_SHEET')+' · '+sheet.name,'']);child.setData(0,ROLE,('RESOURCE',sheet.id));row.addChild(child);self.items[('RESOURCE',sheet.id)]=child
-                        row.setExpanded(True)
-                item.setExpanded(('GROUP',g.id) in expanded or g.id==p.current_group_id or not expanded)
-        add_groups(root,None)
-        selection=('RESOURCE',self.controller.asset_id) if self.controller.asset_id else ('GROUP',p.current_group_id) if p.current_group_id else ('PROJECT',None)
+        def add_group_node(parent_item,group):
+            item=QTreeWidgetItem([group.name+'  · '+t(group.status),str(lib.animation_count(group.id))])
+            item.setData(0,ROLE,('GROUP',group.id))
+            tooltip=' / '.join(v.name for v in lib.path(group.id))+'\n'+t(group.status)
+            if group.alignment_review_required:tooltip+='\n'+t('Alignment Review Required')
+            item.setToolTip(0,tooltip)
+            item.setForeground(0,QColor('#e0a3ff' if group.alignment_review_required else
+                '#efcc75' if group.status=='WARNING' else '#65dbbb' if group.status=='READY' else '#ecf2fc'))
+            parent_item.addChild(item);self.items[('GROUP',group.id)]=item
+            for child in lib.children(group.id):add_group_node(item,child)
+            for r in lib.in_group(group.id):
+                if r.kind=='GENERATED_SPRITE_SHEET':continue
+                row=QTreeWidgetItem([t(r.kind)+' · '+r.name,'']);row.setData(0,ROLE,('RESOURCE',r.id));row.setToolTip(0,r.name+'\n'+r.path)
+                item.addChild(row);self.items[('RESOURCE',r.id)]=row
+                if r.kind=='ANIMATION':
+                    for sheet in lib.in_group(group.id,kinds={'GENERATED_SPRITE_SHEET'}):
+                        if sheet.animation_id==r.animation_id:
+                            child=QTreeWidgetItem([t('GENERATED_SPRITE_SHEET')+' · '+sheet.name,'']);child.setData(0,ROLE,('RESOURCE',sheet.id));row.addChild(child);self.items[('RESOURCE',sheet.id)]=child
+                    row.setExpanded(True)
+            item.setExpanded(('GROUP',group.id) in expanded or group.id==p.current_group_id or not expanded)
+        characters=QTreeWidgetItem([t('Characters'),str(len(lib.characters))])
+        characters.setData(0,ROLE,('CHARACTERS',None));characters.setToolTip(0,t('Characters'))
+        root.addChild(characters);self.items[('CHARACTERS',None)]=characters;characters.setExpanded(True)
+        for character in lib.characters.values():
+            node=QTreeWidgetItem([character_label(character),str(lib.character_animation_count(character.id))])
+            node.setData(0,ROLE,('CHARACTER',character.id))
+            node.setToolTip(0,t('Character: {name}',name=character_label(character))+'\n'+character.template_id+' v%d'%character.template_version)
+            node.setForeground(0,QColor('#8fd3ff'))
+            node.setIcon(0,self.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
+            font=node.font(0);font.setBold(True);node.setFont(0,font)
+            characters.addChild(node);self.items[('CHARACTER',character.id)]=node
+            for group in lib.character_roots(character.id):add_group_node(node,group)
+            node.setExpanded(('CHARACTER',character.id) in expanded or character.id==p.current_character_id or not expanded)
+        loose=QTreeWidgetItem([t('Loose Groups'),str(len(lib.loose_roots()))])
+        loose.setData(0,ROLE,('LOOSE',None));loose.setToolTip(0,t('Loose Groups'))
+        root.addChild(loose);self.items[('LOOSE',None)]=loose;loose.setExpanded(True)
+        for group in lib.loose_roots():add_group_node(loose,group)
+        selection=None
+        for candidate in (self.controller.selection,
+                          ('RESOURCE',self.controller.asset_id) if self.controller.asset_id else None,
+                          ('CHARACTER',p.current_character_id) if p.current_character_id else None,
+                          ('GROUP',p.current_group_id) if p.current_group_id else None,
+                          ('PROJECT',None)):
+            if candidate and candidate in self.items:selection=candidate;break
         current=self.items.get(selection,root);self.tree.setCurrentItem(current)
         self.tree.blockSignals(False);self.rebuilding=False;self.filter();self.update_actions()
         group=lib.groups.get(p.current_group_id)
-        self.info.setText(t('Current Group: {name}',name=' / '.join(g.name for g in lib.path(group.id))) if group else t('Create and select a Group before importing.'))
+        character=lib.characters.get(p.current_character_id)
+        if character is not None:
+            self.info.setText(t('Current Character: {name}',name=character_label(character)))
+        else:
+            self.info.setText(t('Current Group: {name}',name=' / '.join(g.name for g in lib.path(group.id))) if group else t('Create a Group, then add media.'))
         self.tree.setEnabled(not h.interaction_busy or bool(getattr(h,'task_context',None)))
 
     def select(self,kind,ident):
@@ -174,13 +210,30 @@ class ProjectLibraryPanel(QWidget):
         if h.interaction_busy:return
         menu=QMenu(self)
         def action(label,fn):menu.addAction(t(label)).triggered.connect(lambda checked=False:fn())
-        if kind=='PROJECT':action('New Group',lambda:c.new_group())
+        if kind=='PROJECT':
+            action('New Character',lambda:c.new_character())
+            action('New Group',lambda:c.new_group())
+        elif kind=='CHARACTERS':action('New Character',lambda:c.new_character())
+        elif kind=='LOOSE':action('New Group',lambda:c.new_group(None,character_id=None))
+        elif kind=='CHARACTER':
+            action('New Group',lambda:c.new_group(None,character_id=ident))
+            action('New Subgroup',lambda:c.new_subgroup(ident))
+            action('Set Character Reference',lambda:(c.select_character(ident),c.open_character_reference()))
+            action('Edit Character Reference',lambda:(c.select_character(ident),c.open_character_reference()))
+            action('Rename Character',lambda:c.rename('CHARACTER',ident))
+            action('Delete Character',lambda:c.remove_character(ident))
         elif kind=='GROUP':
             action('New Subgroup',lambda:c.new_group(ident))
             action('Rename',lambda:c.rename(kind,ident))
             action('Remove Group',lambda:c.remove_group(ident))
             action('Export Group',lambda:(c.select_group(ident),c.export_groups()))
         else:action('Rename',lambda:c.rename(kind,ident))
+        if kind=='GROUP':
+            movechar=menu.addMenu(t('Move to Character'))
+            movechar.addAction(t('Loose Groups')).triggered.connect(lambda checked=False:c.move_to_character(ident,None))
+            for character in h.project.library.characters.values():
+                if character.id==h.project.library.groups[ident].character_id:continue
+                movechar.addAction(character_label(character)).triggered.connect(lambda checked=False,target=character.id:c.move_to_character(ident,target))
         if kind!='PROJECT':
             move=menu.addMenu(t('Move to Group'))
             if kind=='GROUP':move.addAction(t('Project Root')).triggered.connect(lambda:c.move(kind,ident,None))

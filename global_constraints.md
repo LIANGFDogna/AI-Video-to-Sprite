@@ -53,3 +53,6 @@ Reference是用户摆放且锁定的项目坐标轴，不是旧跟踪Root/Canoni
 
 ## Phase 2A当前规则优先
 必须Project→Group→媒体；此前无项目直接导入流程由本轮要求取代。旧内容工程自动逻辑迁移；新增Group仅容器不改变Canvas/Key/Root/Motion/Reference/Offset。Group切换禁止隐式处理；任务绑定project/group/animation。
+
+## Phase 2B当前规则优先
+Character Reference 属于角色，不再属于项目；每个角色的基准动画必须属于该角色，跨角色移动必须阻止悬空引用或显式清除基准。跨角色移动不自动对齐、不改 Offset，只标记 Alignment Review Required。模板只创建初始 Group 结构，不限制后续编辑；本轮不实现 Animation Set 语义。

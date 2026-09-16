@@ -1,5 +1,21 @@
 # Validation record · v0.4
 
+## 2026-09-16：Character + Character Template（Phase 2B，正式发布）
+
+发布前完整回归：**242 passed，70.50 秒**（上一轮 222 项 + 本轮新增 20 项）；**843 keys** 中英键集、占位符与源码覆盖通过，包内与源码键集完全一致。本轮只新增 `app/models/character_templates.py`、`app/ui/character_panel.py`、`app/ui/character_dialogs.py`、`app/character_smoke.py`、`tests/test_character_workspace.py`，并扩展资源库模型/控制器/树 UI/导出/主窗口与 build.ps1；像素算法未改动。
+
+角色层级：Project → Character → Group → Import Media → Animation → Sprite Sheet → Group Export。Character 保存 `id / name / template_id / template_version / character_reference / group_ids / created_at / modified_at`（稳定 UUID，重命名不改 ID；同级名称按角色树唯一）。模板注册表：`player_metroidvania` v1 生成 39 个 Group、`enemy_basic` v1 生成 7 个、`boss_basic` v1 生成 15 个、`blank` 为空；`semantic_type` 为 Phase 2C Animation Set 预留，本轮不产生强制行为。
+
+Character Reference 为角色级：`validate()` 强制「角色基准动画必须属于同一角色」；Player / Boss / Enemy 的 origin/ground 完全独立；跨角色移动基准 Group 默认被拒绝，UI 可选择取消或「清除角色基准并移动」。旧工程迁移：带 `character_reference` 的工程自动建立 `Default Character` 并把已有 Group 归入该角色；无基准的工程保持 Loose Groups，不自动建角色。`Project.character_reference` 保留为当前角色镜像以兼容旧读取方，保存时角色级与顶层键同时写入。
+
+发布过程中修正的三个真实缺陷：① 模板建树按父级名称跨角色复用同名 Group（Player 与 Boss 都应有 `Idle`）→ 限定为同角色内复用；② 同级名称唯一性、排序与导出路径去重是全局的（角色内的 `Idle` 被改成 `Idle_2`）→ 改为按角色树分桶；③ 设置角色基准时 `_invalidate_reviews()` 使用默认参数把已构建 Sheet 的 ready 清空 → 收窄为「仅计算模式切换才失效」。
+
+冻结 EXE 验收（候选 `release-v0.4-character-templates`）：启动、示例 preview（normalized / character profile / sequence）、workspace、keyed passthrough、project canvas、editor、Character Reference（1.25 / 1.5）、Path/UI（1.0 / 1.25 / 1.5）、Group（两进程）、**Character（两进程）** 全部 passed。Character 报告：`player_template_groups=39`、`character_reference_isolation=True`、`character_switch_without_processing=True`、`loose_group_moved_with_offsets=True`、`export_path_includes_character=True`、`restart_verified=True`。
+
+正式 dist：`E:\AI Video to Sprite\dist\AI Video to Sprite\AI Video to Sprite.exe`，修改时间 2026-09-16 16:05:13，大小 5,582,565 字节，SHA256 `27CE3181188FF08D10DFEAF1C52169B75FC5E2743007A03A8283C9AED8DEE75E`。使用该 dist EXE 复跑 Character（两进程）、Group（两进程）、keyed、normalized / sequence 旧工程与三个 DPI Path，全部 exit code 0；DPI 1.0 / 1.25 / 1.5 各 455 次控件观测。
+
+构建标识 `20260916-character-templates`（v0.4.0）。Phase 2C 接口预留：`Character.template_id` / `template_version`、`Group.semantic_type`、`Group.alignment_review_required`、`TaskContext.character_id`。
+
 ## 2026-09-16：Group Workspace（正式发布）
 
 发布前完整回归：**222 passed，60.54 秒**（上一轮 219 项 + 本轮新增 3 项）；**796 keys** 中英键集、占位符与源码覆盖通过（`scripts/check_i18n.py`，包内与源码键集完全一致）。受保护算法基线：`GROUP_WORKSPACE_PLAN.md` 列出的 **30 个文件 SHA256 全部未变**，报告 `build/group-protected-hashes.json` 为 passed；本轮只新增 `app/models/project_library.py`、`app/core/group_export.py`、`app/ui/library_controller.py`、`app/ui/project_library.py`、`app/ui/group_export_dialog.py`、`app/group_smoke.py`。

@@ -1,5 +1,17 @@
 # Architecture · v0.4
 
+## Character 层与模板注册表（Phase 2B，2026-09-16）
+
+`app/models/project_library.py` 新增 `Character`（id / name / template_id / template_version / character_reference / group_ids / created_at / modified_at）以及 `Group.character_id`、`Group.semantic_type`、`Group.alignment_review_required`。`ProjectLibrary` 提供角色 CRUD、`set_group_character`、`remove_character(move_to_loose)`、`character_roots` / `loose_roots` / `character_animation_count` / `character_for_animation`，并在 `validate()` 中强制：角色 ID 与名称合法且唯一、Group 的 character_id 必须存在、嵌套 Group 必须与父级同角色、角色 Group 索引一致、**角色基准动画必须属于同一角色**。同级 Group 名称唯一性与 order 排序按角色树分桶（`ordered_children`），因此 Player 与 Boss 可以同时拥有 `Idle`。
+
+`app/models/character_templates.py` 是数据驱动的模板注册表 `REGISTRY`：`blank` / `player_metroidvania` / `enemy_basic` / `boss_basic`，每个模板由 `TemplateGroup(path, semantic_type)` 列表描述，`create_character()` 一次性建树。`semantic_type`（idle / locomotion / jump / combat / phase / reaction …）只为 Phase 2C 的 Animation Set 预留，本轮不做任何强制行为；模板分支全部在数据里，UI 对话层没有模板 if。
+
+Character Reference 的所有权迁移到角色级：`Project.character_reference` 保留为「当前角色镜像」字段，旧 API 与 viewer / editor 无需改动，在 `select_animation` / `empty_context` / `select_group` / `select_character` / `from_dict` / 设置基准 / 撤销恢复时同步。保存时同时写入角色级 `library.characters[*].character_reference` 与旧顶层 `character_reference` 键；旧工程打开时由 `ensure_library()` → `migrate_character_reference()` 迁移成 `Default Character`（默认角色）并把已有 Group 归入该角色，没有基准的旧工程保持 Loose Groups 不建角色。跨角色移动先经过 `check_reference_move()`：默认拒绝造成悬空引用，UI 让用户选择取消或「清除角色基准并移动」。
+
+`TaskContext` 增加 `character_id`。后台任务只有在 project / group / animation / character 四元身份全部匹配当前上下文时才更新中央工作区，否则只归档到所属动画，避免未来跨角色串结果。
+
+导出：`group_disk_paths()` 先按角色分桶（角色名前缀在同级去重），再在角色内部按 Group 树生成路径；Loose Group 保持顶层。角色节点因此进入导出路径。
+
 ## Group Workspace 模块层（2026-09-16）
 
 新增纯数据资源库 `app/models/project_library.py`：UUID Group 树、资源所有权（SOURCE_VIDEO / SOURCE_SEQUENCE / SOURCE_SPRITE_SHEET / ANIMATION / GENERATED_SPRITE_SHEET）、每 Group 与每 Animation 的 WorkspaceState、状态机（EMPTY / SOURCE_ONLY / PROCESSING / READY / WARNING）以及严格 `validate()`（层级环、孤儿资源、重复动画所有权、Project Root 素材、同级重名、生成 Sheet 跟随所属 Animation）。Group 只是容器，不改变 Canvas / Key / Root / Motion / Reference 的任何参数。

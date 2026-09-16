@@ -18,7 +18,7 @@ from app.models.project_library import ProjectLibrary
 ALIGNMENT_MODES = ("ROOT XY LOCK", "GROUND LOCK", "ROOT X + GROUND Y")
 PROJECT_FIELDS = ("project_name", "project_version", "project_type", "default_fps", "source_canvas", "output_canvas",
                   "project_canvas_width", "project_canvas_height", "canvas_fit_mode", "character_reference")
-PROJECT_STATE_FIELDS = ("library", "current_group_id")
+PROJECT_STATE_FIELDS = ("library", "current_group_id", "current_character_id")
 
 
 @dataclass
@@ -141,6 +141,7 @@ class Project:
     final_timing: list[dict] = field(default_factory=list)
     library: ProjectLibrary = field(default_factory=ProjectLibrary)
     current_group_id: str | None = None
+    current_character_id: str | None = None
 
     @property
     def has_final_edits(self):
@@ -204,6 +205,8 @@ class Project:
         self.library.validate()
         if self.current_group_id is not None and self.current_group_id not in self.library.groups:
             raise ValueError("Selected Group does not exist")
+        if self.current_character_id is not None and self.current_character_id not in self.library.characters:
+            raise ValueError("Selected Character does not exist")
         self.timeline_edit.validate(self.video.frame_count)
         AnimationTransform.from_dict(self.animation_transform)
         if self.character_reference:self.character_reference.validate()
@@ -360,6 +363,9 @@ class Project:
         project = cls(**data)
         if legacy_library:
             project.ensure_library()
+        project.current_character_id = project.current_character_id or (project.library.groups[project.current_group_id].character_id
+            if project.current_group_id in project.library.groups else None)
+        project.sync_character_reference()
         if project.is_keyed_passthrough and project.sprite_cell.canvas_mode == "auto_bounds":
             project.sprite_cell.canvas_mode = "source_canvas"
         project.validate()
@@ -430,6 +436,8 @@ class Project:
         owner = result.library.animation(animation_id)
         if owner:
             result.current_group_id = owner.group_id
+            result.current_character_id = result.library.groups[owner.group_id].character_id
+        result.sync_character_reference()
         return result
 
 
@@ -465,12 +473,41 @@ class Project:
             self.current_group_id = active.group_id
             if not self.library.groups[active.group_id].ui_state.animation_id:
                 self.library.groups[active.group_id].ui_state.animation_id = self.animation_id
+        self.migrate_character_reference()
+        self.sync_character_reference()
+
+    def migrate_character_reference(self):
+        """Ownership moves to a Character once; legacy projects never lose the reference."""
+        if self.character_reference is None or self.library.characters:
+            return self.library.characters.get(self.current_character_id) if self.current_character_id else None
+        character = self.library.add_character("Default Character", "blank", 1, reference=self.character_reference)
+        for root in self.library.children(None):
+            self.library.reassign_character(root.id, character.id)
+        self.current_character_id = character.id
+        return character
+
+    def active_character(self):
+        character = self.library.characters.get(self.current_character_id) if self.current_character_id else None
+        if character is None and self.current_group_id in self.library.groups:
+            owner = self.library.groups[self.current_group_id].character_id
+            character = self.library.characters.get(owner)
+        return character
+
+    def sync_character_reference(self):
+        """Keep the legacy mirror equal to the active Character Reference."""
+        if not self.library.characters:
+            return self.character_reference
+        character = self.active_character()
+        self.character_reference = character.character_reference if character is not None else None
+        return self.character_reference
 
     def empty_context(self, group_id=None):
         """Keep every animation while showing an empty Group or the Project Root."""
         result = Project(project_id=self.project_id, character_profile=self.character_profile,
                          animations=self.all_animation_snapshots(), **self.project_context())
         result.current_group_id = group_id
+        result.current_character_id = result.library.groups[group_id].character_id if group_id in result.library.groups else None
+        result.sync_character_reference()
         return result
 
     def merge_animation_result(self, result):

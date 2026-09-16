@@ -31,9 +31,10 @@ from app.ui.sequence_info import format_summary, alpha_warning
 from app.ui.canvas_fit_info import canvas_fit_summary
 from app.ui.new_project_dialog import NewProjectDialog
 from app.ui.start_page import StartPage
+from app.ui.character_panel import CharacterPanel, character_label
 from app.ui.library_controller import LibraryController, RoutedEditHistory
 from app.ui.project_library import ProjectLibraryPanel
-from app.models.project_library import TaskContext
+from app.models.project_library import TaskContext, now_stamp
 from app.utils.rgba_image import to_rgba8
 from app.core.frame_sequence import scan_sequence
 from app.i18n import t, manager, translate_error
@@ -107,6 +108,7 @@ class MainWindow(QMainWindow):
         self.play_timer.timeout.connect(self._advance)
         self._create_ui()
         self.library_controller = LibraryController(self)
+        self.character_page.controller = self.library_controller
         self.library_panel = ProjectLibraryPanel(self, self.library_controller)
         self.splitter.insertWidget(0, self.library_panel)
         self.left_scroll.hide()
@@ -258,6 +260,7 @@ class MainWindow(QMainWindow):
         self.views.addWidget(self.start_page)
         self.asset_info = QPlainTextEdit();self.asset_info.setReadOnly(True);self.views.addWidget(self.asset_info)
         self.asset_view = SpritePreview();self.views.addWidget(self.asset_view)
+        self.character_page = CharacterPanel(self);self.views.addWidget(self.character_page)
         self.views.setCurrentWidget(self.start_page)
         middle_layout.addWidget(self.views, 1)
         self.context_hint = QLabel(t("Import → Chroma key → Root → Alignment → Sprite sheet → Export"))
@@ -349,6 +352,13 @@ class MainWindow(QMainWindow):
                 'chroma_key_settings','sequence_fps','export_settings','character_reference','animation_transform')
         return {k:p[k] for k in keys}
 
+    def _sync_character_owner(self,value):
+        "Undo/redo of an animation must not revert another Animation Reference; keep the owner in step."
+        character=self.project.active_character()
+        if character is not None:
+            character.character_reference=CharacterReference.from_dict(value)
+        return character
+
     def _restore_edit(self, state):
         self.editor.pause_preview()
         data = asdict(self.project);data.update(state)
@@ -366,6 +376,7 @@ class MainWindow(QMainWindow):
         history=self._history();state=history.undo()
         if state is not None:
             if 'character_reference' not in history.last_changed_fields:state['character_reference']=asdict(self.project.character_reference) if self.project.character_reference else None
+            self._sync_character_owner(state['character_reference'])
             self._restore_edit(state)
 
     def redo_edit(self):
@@ -375,6 +386,7 @@ class MainWindow(QMainWindow):
         history=self._history();state=history.redo()
         if state is not None:
             if 'character_reference' not in history.last_changed_fields:state['character_reference']=asdict(self.project.character_reference) if self.project.character_reference else None
+            self._sync_character_owner(state['character_reference'])
             self._restore_edit(state)
 
     def _refresh_editor(self):
@@ -615,7 +627,9 @@ class MainWindow(QMainWindow):
 
     def open_character_reference(self):
         if self.reference_dialog:self.reference_dialog.raise_();return
-        if self.worker or not self.project.video.frame_count:return
+        if self.worker:return
+        if not self.project.video.frame_count:
+            self.context_hint.setText(t('Select a Group with an animation before setting the Character Reference.'));return
         if not self.keyed_ready:
             self.editor.notice.setText(t('Process all keyed frames before editing.'));return
         p=self.project
@@ -638,18 +652,30 @@ class MainWindow(QMainWindow):
         self._run(operation,success,t('Loading Character Reference'))
 
     def _save_character_reference(self,reference):
-        before=self._edit_snapshot();p=self.project;first=p.character_reference is None
-        p.character_reference=reference
+        before=self._edit_snapshot();p=self.project
+        character=p.active_character()
+        if character is None:
+            character=p.library.add_character('Default Character','blank',1)
+            if p.current_group_id in p.library.groups:
+                p.library.reassign_character(p.current_group_id,character.id)
+            p.current_character_id=character.id
+        first=character.character_reference is None
+        character.character_reference=reference
+        character.modified_at=now_stamp()
+        p.sync_character_reference()
         # This explicit calibration workflow starts at stationary keyed pixels.
         # Keep old tracking data/settings available for the separate legacy workflow.
+        mode_changed=False
         if first and not p.is_passthrough:
+            mode_changed=True
             canvas_mode=p.sprite_cell.canvas_mode
             if p.input_mode=='video':p.set_processing_mode('keyed_passthrough')
             else:p.passthrough_alignment=True;p.alignment_mode='passthrough';p.layout=None
             p.sprite_cell.canvas_mode=canvas_mode if canvas_mode=='normalize_source' else 'source_canvas'
             self.built=False
         self._history().record(before,self._edit_snapshot(),'Character Reference')
-        self.dirty=True;self._invalidate_reviews();self._sync_controls();self._refresh_editor()
+        # Reference axes are metadata; only a mode switch invalidates the built sheet.
+        self.dirty=True;self._invalidate_reviews(mode_changed);self._sync_controls();self._refresh_editor()
         self.status.setText(t('Character Coordinate System: Locked'))
 
     def _reference_closed(self,*args):
@@ -1301,14 +1327,16 @@ class MainWindow(QMainWindow):
         if self.worker:return
         self.last_error=None;self.preview_revision+=1;self.play_timer.stop()
         self.play_button.setText(t("▶ Play"));self.status.setText(t(label))
-        context=TaskContext(self.project.project_id,self.project.current_group_id,self.project.animation_id,animation_task or label)
+        context=TaskContext(self.project.project_id,self.project.current_group_id,self.project.animation_id,animation_task or label,
+            self.project.current_character_id)
         self.task_context=context if animation_task else None
         worker=Worker(operation,self);worker.task_context=context;self.worker=worker
         def receive(result):
             if animation_task:
                 processed=result if isinstance(result,Project) else result[0]
                 if self.project.project_id!=context.project_id or not self.project.library.animation(context.animation_id):return
-                active=self.project.animation_id==context.animation_id and self.project.current_group_id==context.group_id
+                active=(self.project.animation_id==context.animation_id and self.project.current_group_id==context.group_id
+                    and self.project.current_character_id==context.character_id)
                 self.project=self.project.merge_animation_result(processed)
                 if animation_task=='build':self.project.library.mark_generated(context.animation_id,True)
                 row=self.project.library.animation(context.animation_id);row.warning=''
@@ -1452,6 +1480,14 @@ class MainWindow(QMainWindow):
             self.steps.setCurrentIndex(1)
             self.status.setText(t('Imported {p0} original frames · adjust key, then Extract / Process', p0=project.video.frame_count))
         self._run(operation, success, t("Importing / decoding original video"))
+
+    def show_character_page(self,ident):
+        character=self.project.library.characters.get(ident)
+        self.character_page.refresh(character)
+        self.editor.pause_preview();self.play_timer.stop()
+        self.views.setCurrentWidget(self.character_page)
+        self.view_label.setText(character_label(character) if character else t('Characters'))
+        self._update_state()
 
     def _loaded(self):
         self.project.ensure_library()

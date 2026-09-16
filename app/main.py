@@ -30,9 +30,13 @@ def main() -> int:
     parser.add_argument("--verify-path-memory",action="store_true",help="Second-process verification of saved path history")
     parser.add_argument("--smoke-groups",type=Path,help="Validate Group workspace, imports, exports and task isolation")
     parser.add_argument("--verify-groups",action="store_true",help="Verify saved Groups in a fresh process")
+    parser.add_argument("--smoke-characters",type=Path,help="Validate Character templates, per-Character Reference and ownership moves")
+    parser.add_argument("--verify-characters",action="store_true",help="Verify saved Characters in a fresh process")
     args = parser.parse_args()
     import os,tempfile,uuid
-    if args.smoke_groups:
+    if args.smoke_characters:
+        os.environ["AIVSPRITE_SETTINGS"]=str(args.smoke_characters.resolve()/"machine-settings.json")
+    elif args.smoke_groups:
         os.environ["AIVSPRITE_SETTINGS"]=str(args.smoke_groups.resolve()/"machine-settings.json")
     elif args.smoke_path_memory:
         os.environ['AIVSPRITE_SETTINGS']=str(args.smoke_path_memory.resolve()/'machine-settings.json')
@@ -52,7 +56,10 @@ def main() -> int:
     sys.excepthook = exception_hook
     window = MainWindow(log_path)
     window.show()
-    if args.smoke_groups:
+    if args.smoke_characters:
+        from app.character_smoke import start_character_smoke
+        start_character_smoke(app,window,args.smoke_characters,args.verify_characters)
+    elif args.smoke_groups:
         from app.group_smoke import start_group_smoke
         start_group_smoke(app,window,args.smoke_groups,args.verify_groups)
     elif args.smoke_path_memory:

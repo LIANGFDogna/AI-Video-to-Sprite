@@ -190,7 +190,25 @@ if ($spriteGroupVerify.ExitCode -ne 0) { throw "Packaged Group restart verificat
 $spriteGroupReport = Get-Content -LiteralPath (Join-Path $spriteGroupDirectory 'validation.json') -Raw | ConvertFrom-Json
 if ($spriteGroupReport.status -ne 'passed' -or -not $spriteGroupReport.restart_verified -or -not $spriteGroupReport.group_status_ready) { throw 'Missing Group acceptance result.' }
 
+$spriteCharacterDirectory = Join-Path $PSScriptRoot ('build\character-smoke-' + [Guid]::NewGuid().ToString('N'))
+$spriteCharacterSmoke = Start-Process -FilePath $spriteExecutable -ArgumentList @('--smoke-characters', ('"' + $spriteCharacterDirectory + '"')) -WindowStyle Hidden -PassThru
+if (-not $spriteCharacterSmoke.WaitForExit(220000)) {
+    $spriteCharacterSmoke.Kill()
+    throw 'Packaged Character templates / per-Character Reference timed out.'
+}
+$spriteCharacterSmoke.Refresh()
+if ($spriteCharacterSmoke.ExitCode -ne 0) { throw "Packaged Character workspace failed ($($spriteCharacterSmoke.ExitCode)). Check logs/app.log." }
+$spriteCharacterVerify = Start-Process -FilePath $spriteExecutable -ArgumentList @('--smoke-characters', ('"' + $spriteCharacterDirectory + '"'), '--verify-characters') -WindowStyle Hidden -PassThru
+if (-not $spriteCharacterVerify.WaitForExit(160000)) {
+    $spriteCharacterVerify.Kill()
+    throw 'Packaged Character restart verification timed out.'
+}
+$spriteCharacterVerify.Refresh()
+if ($spriteCharacterVerify.ExitCode -ne 0) { throw "Packaged Character restart verification failed ($($spriteCharacterVerify.ExitCode)). Check logs/app.log." }
+$spriteCharacterReport = Get-Content -LiteralPath (Join-Path $spriteCharacterDirectory 'validation.json') -Raw | ConvertFrom-Json
+if ($spriteCharacterReport.status -ne 'passed' -or -not $spriteCharacterReport.restart_verified -or -not $spriteCharacterReport.character_reference_isolation) { throw 'Missing Character acceptance result.' }
+
 $spritePathReports = & (Join-Path $PSScriptRoot 'scripts\verify_path_ui.ps1') -Executable $spriteExecutable
-$spriteReceipt = @{ status = 'passed'; build_version = '20260916-group-workspace'; path_validation = $spritePathReports; reference_validation = $spriteReferenceReports; group_validation = $spriteGroupReport; editor_validation = $spriteEditorReport; executable_sha256 = (Get-FileHash -LiteralPath $spriteExecutable -Algorithm SHA256).Hash; verified_at = (Get-Date).ToString('o') }
+$spriteReceipt = @{ status = 'passed'; build_version = '20260916-character-templates'; path_validation = $spritePathReports; reference_validation = $spriteReferenceReports; group_validation = $spriteGroupReport; character_validation = $spriteCharacterReport; editor_validation = $spriteEditorReport; executable_sha256 = (Get-FileHash -LiteralPath $spriteExecutable -Algorithm SHA256).Hash; verified_at = (Get-Date).ToString('o') }
 $spriteReceipt | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $spriteReleaseDirectory 'release-validation.json') -Encoding UTF8
 Write-Host "Built $spriteExecutable. Video input uses FFmpeg; frame sequence input does not. All release checks passed."

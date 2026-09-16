@@ -1,5 +1,19 @@
 # AI Video to Sprite · v0.4
 
+## Character 与角色模板（Phase 2B，2026-09-16）
+
+层级从「Project → Group」扩展为 **Project → Character → Group → Import Media → Animation → Sprite Sheet → Group Export**。Project Canvas 仍是项目级，**Character Reference 属于角色**，Group 是角色下的动画工作区，Animation Transform 属于动画。
+
+- 新建角色：Add 菜单 →「新建角色」，输入名称并选择模板：空白角色 / 类银河城玩家（Metroidvania Player）/ 普通敌人 / Boss。创建后自动选中该角色。模板只创建初始结构，之后可以自由删除、改名、排序、嵌套，模板不会限制后续编辑。
+- 类银河城玩家模板一次生成 39 个 Group（Idle；Movement/Walk·Run·Sprint·Turn；Jump/JumpUp·FallLoop·Land·DoubleJump；Dash/GroundDash·AirDash；Wall/WallSlide·WallClimb·WallJump·Mantle；Combat/Attack1–3·UpAttack·DownAttack；AirCombat/AirAttack·AirAttackUp·AirAttackDown；Interaction/LookUp·LookDown·Crouch·Push·Pull；Reaction/Hurt·Knockback·Death）；Enemy 7 个（Idle、Walk、Run、Attack、Hurt、Knockback、Death）；Boss 15 个（Idle、Move、Phase/Phase1–3、Attack/Attack1–3、Special、Hurt、Stagger、Death、Intro）。
+- Character Reference 按角色独立保存与校验：每个角色的基准动画必须属于该角色；把基准动画所在 Group 移到别的角色时会提示「清除角色基准并移动」或取消，不会留下悬空引用。Player、Boss、Enemy 的 origin/ground 互不影响。
+- Group 归属：拖到 Character 节点即归属该角色，拖到 Loose Groups 即脱离角色；跨角色移动保留 Animation Transform、帧数据与 Sprite Sheet，只把基准来源切换为新角色，并把该 Group 标记为 Alignment Review Required（不自动对齐）。属于角色的 Group 下所有 Source / Animation / Sprite Sheet 一起归属。
+- 删除角色会把它的 Group 移到 Loose Groups（可取消），不删除素材；重命名只改显示名，ID、缓存、Animation ID、Character Reference 全部不变。
+- 导出路径包含角色节点：`Export/Player/Movement/Run/<Animation>/`；同名 Group 分属不同角色时不再互相改名；Loose Group 仍在顶层。
+- 角色切换只切换树、工作区与基准上下文，不执行 Decode / Key / Build。
+
+构建标识：`20260916-character-templates`（v0.4.0）。
+
 ## Group Workspace 项目资源库（2026-09-16）
 
 工作流从「一个工程一个动画」改为 **Project → Group → Import Media → Animation → Sprite Sheet → Group Export**。Group 是工作上下文：必须先创建并选中 Group 才能导入媒体；项目根节点（Project Root）不接受任何媒体，拖放同样会被拒绝并给出提示。
