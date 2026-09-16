@@ -1,5 +1,15 @@
 # Validation record · v0.4
 
+## 2026-09-16：Project Library 资源移除生命周期（修复）
+
+**256 passed，69.57 秒**（上一轮 242 + 本轮新增 14）；i18n **855 keys** 源码覆盖通过。本轮只补齐资源移除生命周期：`ProjectLibrary.remove_resource/remove_animation`、`LibraryController.remove_resource/reveal_resource/export_animation`、资源右键菜单、`MessageBox.choice` 多选项对话框与 `reveal_in_explorer`。Canvas Normalize、Character Templates、Character Reference 算法、Animation Transform、Group Export、TaskContext、Path Memory 未改动。
+
+移除语义：只删 `.aivsprite` 资源记录与工作区引用，绝不删除磁盘上的 MP4 / MOV / PNG / 序列帧目录与导出文件。Source 有派生结果时三选项（默认「仅移除源资源，保留已生成结果」）；Animation 连同生成 Sheet、UIState 与历史引用一起移除，基准动画需先确认清除基准，来源记录无引用时一并移除；Sprite Sheet 只移除记录。
+
+过程缺陷与修复：① 移除后 `ensure_library()` 依据项目动画快照把记录复活（已在移除后清理快照与当前动画身份）；② 级联移除重复删除来源行触发 KeyError 回滚（改为存在性判断）；③ 工作区回退判定在清空 `animation_id` 之后求值导致不切换（改为提前捕获）。
+
+冻结 EXE 验收：Character smoke（两进程）新增 Player → Jump → JumpUp 序列「仅移除 Source」流程，断言右键菜单包含「从项目中移除」、源目录仍在磁盘、Animation 仍为 READY、Group 仍可打开、保存重开仍生效；两项报告字段 `resource_removal_keeps_source_files` 与 `resource_removal_verified` 均为 true。冻结候选 `release-v0.4-resource-removal`（EXE 修改时间 2026-09-16 16:54:56，5,589,376 字节，SHA256 `3201D067B4F878CA353DB8C3D91FF11EA5B39615AC11C0FDB5DC7F274CB258CB`）：启动、示例 preview、workspace、keyed passthrough、project canvas、editor、Character Reference（1.25/1.5）、Path/UI（1.0/1.25/1.5）、Group（两进程）、Character（两进程，含资源移除）全部 passed；Character 报告 `resource_removal_keeps_source_files=true`、`restart_verified=true`。发布到 dist 时目标 EXE 正在运行（用户在 16:15 打开的 metroidvania-forge 会话），按发布脚本的规则未做覆盖：dist 仍是 20260916-character-templates，待关闭应用后执行 `scripts\publish_release.ps1 -SourceRoot release-v0.4-resource-removal` 即可完成发布。
+
 ## 2026-09-16：Character + Character Template（Phase 2B，正式发布）
 
 发布前完整回归：**242 passed，70.50 秒**（上一轮 222 项 + 本轮新增 20 项）；**843 keys** 中英键集、占位符与源码覆盖通过，包内与源码键集完全一致。本轮只新增 `app/models/character_templates.py`、`app/ui/character_panel.py`、`app/ui/character_dialogs.py`、`app/character_smoke.py`、`tests/test_character_workspace.py`，并扩展资源库模型/控制器/树 UI/导出/主窗口与 build.ps1；像素算法未改动。

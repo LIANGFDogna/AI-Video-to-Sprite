@@ -437,6 +437,71 @@ class ProjectLibrary:
             return None
         return self.characters.get(self.groups[owner.group_id].character_id)
 
+    def related_animations(self, source_id):
+        return [row for row in self.resources.values() if row.kind == "ANIMATION" and row.source_id == source_id]
+
+    def generated_sheets(self, animation_id):
+        return [row for row in self.resources.values() if row.kind == "GENERATED_SPRITE_SHEET" and row.animation_id == animation_id]
+
+    def reference_characters_for_animation(self, animation_id):
+        return [character for character in self.characters.values()
+                if character.character_reference and character.character_reference.reference_animation_id == animation_id]
+
+    def remove_animation(self, ident, clear_references=False):
+        "Drop one Animation record with its generated sheet, history and workspace references."
+        row = self.resources.get(ident)
+        if row is None:
+            raise ValueError("Resource does not exist")
+        if row.kind != "ANIMATION":
+            del self.resources[ident]
+            self.refresh_status()
+            return [ident]
+        blocking = self.reference_characters_for_animation(row.animation_id)
+        if blocking and not clear_references:
+            raise ValueError("Animation is the Character Reference")
+        for character in blocking:
+            character.character_reference = None
+            character.modified_at = now_stamp()
+        removed = [ident]
+        for sheet in self.generated_sheets(row.animation_id):
+            removed.append(sheet.id)
+            del self.resources[sheet.id]
+        for group in self.groups.values():
+            if group.ui_state.animation_id == row.animation_id:
+                group.ui_state = WorkspaceState()
+            group.animation_states.pop(row.animation_id, None)
+        del self.resources[ident]
+        source_id = row.source_id
+        if source_id and not self.related_animations(source_id):
+            # The source record only exists to feed Animations; disk files are never touched.
+            removed.append(source_id)
+            del self.resources[source_id]
+        self.refresh_status()
+        return removed
+
+    def remove_resource(self, ident, cascade=False, clear_references=False):
+        """Remove Project Library records only; source files and caches on disk stay untouched."""
+        row = self.resources.get(ident)
+        if row is None:
+            raise ValueError("Resource does not exist")
+        removed = []
+        if row.kind in SOURCE_KINDS:
+            animations = self.related_animations(ident)
+            if cascade:
+                for animation in animations:
+                    removed.extend(self.remove_animation(animation.id, clear_references))
+            else:
+                for animation in animations:
+                    animation.source_id = None
+            if ident in self.resources:
+                removed.append(ident)
+                del self.resources[ident]
+        else:
+            removed.extend(self.remove_animation(ident, clear_references))
+        self.refresh_character_groups()
+        self.refresh_status()
+        return removed
+
     def remove_group(self, ident, move_to_parent=False):
         group = self.groups[ident]
         contents = self.in_group(ident)

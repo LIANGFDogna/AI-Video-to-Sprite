@@ -1,6 +1,8 @@
+import sys
 from PySide6.QtWidgets import QMessageBox as QtMessageBox, QFileDialog as QtFileDialog
 from pathlib import Path
-from PySide6.QtCore import QUrl, Qt
+from PySide6.QtCore import QProcess, QUrl, Qt
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QPushButton, QToolButton, QSplitter, QListView, QComboBox
 from PySide6.QtGui import QIcon
 from app.i18n import t, manager
@@ -42,6 +44,33 @@ class MessageBox:
     @staticmethod
     def information(parent, title, text, buttons=None, default=None):
         return MessageBox._show(QtMessageBox.Icon.Information, parent, title, text, buttons, default)
+
+    @staticmethod
+    def choice(parent, title, text, options, default=0):
+        """Ask with custom labels; the last option is the cancel role. Returns the index or -1."""
+        box = QtMessageBox(QtMessageBox.Icon.Question, t(title), t(text), QtMessageBox.StandardButton.NoButton, parent)
+        buttons = []
+        for index, label in enumerate(options):
+            role = QtMessageBox.ButtonRole.RejectRole if index == len(options) - 1 else QtMessageBox.ButtonRole.AcceptRole
+            buttons.append(box.addButton(t(label), role))
+        box.setDefaultButton(buttons[min(max(default, 0), len(buttons) - 1)])
+        box.exec()
+        clicked = box.clickedButton()
+        return buttons.index(clicked) if clicked in buttons else -1
+
+
+def reveal_in_explorer(path):
+    """Open the OS file manager at a Project Library resource without touching the file."""
+    target = Path(path)
+    if not target.exists():
+        return False
+    if sys.platform.startswith("win"):
+        if target.is_dir():
+            QProcess.startDetached("explorer", [str(target)])
+        else:
+            QProcess.startDetached("explorer", ["/select," + str(target)])
+        return True
+    return QDesktopServices.openUrl(QUrl.fromLocalFile(str(target if target.is_dir() else target.parent)))
 
 
 def path_context(parent=None):

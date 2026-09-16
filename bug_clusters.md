@@ -102,3 +102,6 @@
 
 ## Phase 2B审查
 模板数据类：模板建树曾按父级名称复用其他角色的同名 Group（Player/Boss 都应有 Idle），已限定为同角色复用；同级名称唯一性与排序已按角色分桶。数据流类：基准保存曾把已构建 Sheet 的 ready 清空（_invalidate_reviews 默认参数），已按"仅模式切换才失效"收窄。文件路径类：导出路径曾全局去重导致角色内 Idle 变成 Idle_2，已改为按角色分桶后各自去重。
+
+## 资源移除生命周期审查
+数据流类：`remove_resource` 只删资源库记录后，`_loaded() → ensure_library()` 会依据项目内的动画快照把已删除的 Animation 重新建回来（表现为移除无效）；已在控制器移除后同步清理 `project.animations` 与当前动画身份。引用完整性类：移除 Animation 时其 GENERATED_SPRITE_SHEET 与角色基准引用必须处理，否则 validate() 会拒绝（或留下 dangling reference）——模型现在同时删除生成 Sheet，并在基准冲突时要求显式清除；来源记录若无动画引用则一并移除（磁盘不动）。逻辑顺序类：工作区回退判定曾读取被清空后的 animation_id，导致移除当前资源后不切换；已在清空之前捕获当前动画身份。级联路径曾对同一来源行重复删除触发 KeyError 回滚；已改为存在性判断。

@@ -206,8 +206,12 @@ class ProjectLibraryPanel(QWidget):
     def context_menu(self,point):
         item=self.tree.itemAt(point)
         if not item:return
-        kind,ident=item.data(0,ROLE);h=self.host;c=self.controller
-        if h.interaction_busy:return
+        kind,ident=item.data(0,ROLE)
+        if self.host.interaction_busy:return
+        self.build_context_menu(kind,ident).exec(self.tree.viewport().mapToGlobal(point))
+
+    def build_context_menu(self,kind,ident):
+        h=self.host;c=self.controller
         menu=QMenu(self)
         def action(label,fn):menu.addAction(t(label)).triggered.connect(lambda checked=False:fn())
         if kind=='PROJECT':
@@ -227,7 +231,12 @@ class ProjectLibraryPanel(QWidget):
             action('Rename',lambda:c.rename(kind,ident))
             action('Remove Group',lambda:c.remove_group(ident))
             action('Export Group',lambda:(c.select_group(ident),c.export_groups()))
-        else:action('Rename',lambda:c.rename(kind,ident))
+        else:
+            action('Rename',lambda:c.rename(kind,ident))
+            if h.project.library.resources[ident].kind in ('ANIMATION','GENERATED_SPRITE_SHEET'):
+                action('Export',lambda:c.export_animation(ident))
+            action('Show in Explorer',lambda:c.reveal_resource(ident))
+            action('Remove from Project',lambda:c.remove_resource(ident))
         if kind=='GROUP':
             movechar=menu.addMenu(t('Move to Character'))
             movechar.addAction(t('Loose Groups')).triggered.connect(lambda checked=False:c.move_to_character(ident,None))
@@ -241,4 +250,4 @@ class ProjectLibraryPanel(QWidget):
             for g in lib.groups.values():
                 if kind=='GROUP' and g.id in lib.descendants(ident):continue
                 move.addAction(' / '.join(v.name for v in lib.path(g.id))).triggered.connect(lambda checked=False,target=g.id:c.move(kind,ident,target))
-        menu.exec(self.tree.viewport().mapToGlobal(point))
+        return menu

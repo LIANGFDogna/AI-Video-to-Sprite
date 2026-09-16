@@ -15,7 +15,8 @@ from app.models.project_library import ProjectLibrary, WorkspaceState, unique_na
 from app.ui.character_dialogs import CharacterDialog
 from app.ui.character_panel import character_label
 from app.models.timeline_edit import EditHistory
-from app.ui.dialogs import MessageBox, FileDialog
+from app.ui.dialogs import MessageBox, FileDialog, reveal_in_explorer
+from app.models.project_library import SOURCE_KINDS
 from app.utils.paths import cache_directory
 from app.utils.rgba_image import read_rgba, to_rgba8
 from app.core.group_export import sheet_path
@@ -316,6 +317,84 @@ class LibraryController(QObject):
         self.mutate(operation,'Move')
         row=self.host.project.library.animation(self.host.project.animation_id)
         if row and row.group_id!=self.host.project.current_group_id:self.select_group(row.group_id,row.animation_id,capture=False)
+
+    def resource_related_counts(self,ident):
+        lib=self.host.project.library;row=lib.resources.get(ident)
+        if row is None or row.kind not in SOURCE_KINDS:return (0,0)
+        animations=lib.related_animations(ident)
+        return (len(animations),sum(len(lib.generated_sheets(animation.animation_id)) for animation in animations))
+
+    def remove_resource(self,ident,confirmed=False,cascade=False):
+        "Remove Project Library records only; source files, caches and exports on disk are never touched."
+        h=self.host;lib=h.project.library
+        if h.interaction_busy:return None
+        row=lib.resources.get(ident)
+        if row is None:return None
+        clear=False
+        if row.kind=='ANIMATION' and lib.reference_characters_for_animation(row.animation_id):
+            if not confirmed and MessageBox.question(h,t('Remove Resource'),
+                    t('The animation is the current Character Reference. Clear the Character Reference and remove it?'),
+                    MessageBox.StandardButton.Yes|MessageBox.StandardButton.Cancel,
+                    MessageBox.StandardButton.Cancel)!=MessageBox.StandardButton.Yes:return None
+            clear=True
+        elif row.kind in SOURCE_KINDS:
+            animations,sheets=self.resource_related_counts(ident)
+            if animations and not confirmed:
+                index=MessageBox.choice(h,t('Remove Resource'),
+                    t('Remove this resource from the project?\n\nRelated: {animations} Animations / {sheets} Sprite Sheets',
+                      animations=animations,sheets=sheets),
+                    ('Remove source only, keep generated results','Remove related Animations and Sprite Sheets','Cancel'),0)
+                if index<0 or index==2:return None
+                cascade=index==1
+            elif not confirmed and MessageBox.question(h,t('Remove Resource'),
+                    t('Remove this resource from the project?'),
+                    MessageBox.StandardButton.Yes|MessageBox.StandardButton.Cancel,
+                    MessageBox.StandardButton.Cancel)!=MessageBox.StandardButton.Yes:return None
+        elif not confirmed:
+            message='Remove this Sprite Sheet from the project?' if row.kind=='GENERATED_SPRITE_SHEET' else 'Remove this resource from the project?'
+            if MessageBox.question(h,t('Remove Resource'),t(message),
+                    MessageBox.StandardButton.Yes|MessageBox.StandardButton.Cancel,
+                    MessageBox.StandardButton.Cancel)!=MessageBox.StandardButton.Yes:return None
+        p=h.project
+        related={row.animation_id} if row.kind in ('ANIMATION','GENERATED_SPRITE_SHEET') else {animation.animation_id for animation in lib.related_animations(ident)}
+        current_animation=p.animation_id
+        purged=set()
+        if row.kind=='ANIMATION':purged.add(row.animation_id)
+        elif row.kind in SOURCE_KINDS and cascade:purged.update(animation.animation_id for animation in lib.related_animations(ident))
+        removed=self.mutate(lambda tree:tree.remove_resource(ident,cascade=cascade,clear_references=clear),'Remove Resource')
+        if not removed:return None
+        # The project keeps one snapshot per Animation; drop them so ensure_library() cannot revive deleted records.
+        for animation_id in purged:
+            p.animations.pop(animation_id,None)
+            if p.animation_id==animation_id:
+                p.animation_id=''
+                p.source_video=''
+                p.sequence_folder=''
+        if ident==self.asset_id or current_animation in related:
+            self.asset_id=None
+            self.selection=None
+            self.select_group(h.project.current_group_id,capture=False)
+        else:
+            self.refresh()
+            h._update_state()
+        h.status.setText(t('Resource removed from the project: {name}',name=row.name))
+        return removed
+
+    def reveal_resource(self,ident):
+        lib=self.host.project.library;row=lib.resources.get(ident)
+        if row is None:return False
+        path=row.path
+        if not path and row.kind=='GENERATED_SPRITE_SHEET':
+            path=str(sheet_path(self.host.project,self.host.project_file,row))
+        ok=reveal_in_explorer(path) if path else False
+        if not ok:self.host.status.setText(t('The resource could not be found on disk.'))
+        return ok
+
+    def export_animation(self,ident):
+        row=self.host.project.library.resources.get(ident)
+        if row is None or row.kind not in ('ANIMATION','GENERATED_SPRITE_SHEET'):return
+        self.select_animation(row.animation_id)
+        self.host.choose_export('all')
 
     def character_summary(self,ident):
         lib=self.host.project.library;character=lib.characters.get(ident)

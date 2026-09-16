@@ -1,4 +1,4 @@
 """AI Video to Sprite desktop application."""
 __version__ = "0.4.0"
 
-__build__ = "20260916-character-templates"
+__build__ = "20260916-resource-removal"

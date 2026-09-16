@@ -841,5 +841,17 @@
   "Animations: {animations}": "Animations: {animations}",
   "Move contents to Loose Groups and delete this Character?": "Move contents to Loose Groups and delete this Character?",
   "Remove this empty Character?": "Remove this empty Character?",
-  "Character Reference": "Character Reference"
+  "Character Reference": "Character Reference",
+  "Remove from Project": "Remove from Project",
+  "Show in Explorer": "Show in Explorer",
+  "Remove Resource": "Remove Resource",
+  "Resource does not exist": "Resource does not exist",
+  "Remove this resource from the project?\n\nRelated: {animations} Animations / {sheets} Sprite Sheets": "Remove this resource from the project?\n\nRelated: {animations} Animations / {sheets} Sprite Sheets",
+  "Remove source only, keep generated results": "Remove source only, keep generated results",
+  "Remove related Animations and Sprite Sheets": "Remove related Animations and Sprite Sheets",
+  "Remove this resource from the project?": "Remove this resource from the project?",
+  "Remove this Sprite Sheet from the project?": "Remove this Sprite Sheet from the project?",
+  "The animation is the current Character Reference. Clear the Character Reference and remove it?": "The animation is the current Character Reference. Clear the Character Reference and remove it?",
+  "The resource could not be found on disk.": "The resource could not be found on disk.",
+  "Resource removed from the project: {name}": "Resource removed from the project: {name}"
 }

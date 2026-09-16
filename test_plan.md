@@ -79,3 +79,6 @@
 
 ## Phase 2B验收
 新增 20 项：空角色、三套模板 Group 树（39/7/15）、模板 ID/版本持久化、Group character_id、Loose Group、跨角色移动保留 Offset 与标记、角色基准独立与不串、基准必须属于本角色、基准动画移动保护、删除角色移入 Loose、重命名保持 ID、旧工程基准迁移、无基准旧工程迁移、TaskContext.character_id、导出路径含角色、中文名称、搜索、计数。冻结 EXE：Character smoke 两进程（模板建树/基准隔离/跨角色移动/导出路径/重启校验）；DPI 100/125/150 沿用 Path 验收。
+
+## 资源移除此轮验收
+新增 14 项：资源右键菜单含移除/显示/导出、移除 Source 不动磁盘、保留已生成结果、三选项提示（默认保留/级联/取消）、移除 Animation（含生成 Sheet、UIState 与孤立来源记录）、移除导入与生成 Sheet、移除当前资源后工作区回退、删到空组显示空状态、基准动画取消与确认两条路径、保存重开后移除生效、不影响其它 Group 的动画与偏移、移除可撤销（恢复记录/顺序/关联）。冻结 EXE：Character smoke 增加 JumpUp 序列「仅移除 Source」流程并断言源目录仍在、Animation 仍为 READY、重开后仍生效。

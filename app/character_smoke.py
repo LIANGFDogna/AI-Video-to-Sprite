@@ -8,9 +8,11 @@ from app.core.project_workspace import create_project_workspace
 from app.core.group_export import plan_group_export,export_group_plan
 from app.core.final_frame_provider import FinalFrameProvider
 from app.core.pipeline import Pipeline
+from app.i18n import t
 from app.models.character_reference import AnimationTransform, CharacterReference
 from app.models.character_templates import BOSS, ENEMY, PLAYER, REGISTRY
 from app.utils.cache import save_rgba
+from app.ui.dialogs import MessageBox
 from app.utils.rgba_image import read_rgba
 from app import __build__
 
@@ -60,6 +62,9 @@ def start_character_smoke(app,w,output,verify=False):
                 assert len(p.library.character_members(hero.id))==39
                 state['hero']=hero.id
                 write_video(output/'Hero Idle.mp4',(90,50,220));write_video(output/'Boss Idle.mp4',(200,60,60))
+                jumps=output/'Jump Frames';jumps.mkdir()
+                for i in range(6):
+                    rgba=np.zeros((96,96,4),np.uint8);rgba[30:70,30+i:46+i]=(120,200,90,190);save_rgba(jumps/f'{i:04d}.png',rgba)
                 sequence=output/'Loose Frames';sequence.mkdir()
                 for i in range(8):
                     rgba=np.zeros((96,96,4),np.uint8);rgba[20:80,20+i:36+i]=(210,60,120,190);save_rgba(sequence/f'{i:04d}.png',rgba)
@@ -129,14 +134,39 @@ def start_character_smoke(app,w,output,verify=False):
                 assert exported.is_file(),'Character export path missing: '+str(exported)
                 result=p.library.characters[state['hero']].character_reference
                 assert result==state['hero_reference'] and p.library.characters[state['boss']].character_reference==state['boss_reference']
+                c.select_group(next(g.id for g in p.library.children(group(state['hero'],'Jump').id) if g.name=='JumpUp'))
+                w.import_sequence(output/'Jump Frames');advance('prune_import')
+            elif phase=='prune_import':
+                if not w.sequence_dialog:return
+                w.sequence_dialog.submit();advance('prune_built')
+            elif phase=='prune_built':
+                if not w.built:return
+                row=p.library.animation(p.animation_id);source=p.library.resources[row.source_id]
+                state['prune_animation']=row.animation_id;state['prune_source']=source.id;state['prune_folder']=str(source.path)
+                state['prune_group']=p.current_group_id
+                actions=[action.text() for action in w.library_panel.build_context_menu('RESOURCE',source.id).actions()]
+                assert t('Remove from Project') in actions,'Resource context menu is missing Remove from Project'
+                original=MessageBox.choice
+                MessageBox.choice=staticmethod(lambda *args,**kwargs:0)
+                try:c.remove_resource(source.id)
+                finally:MessageBox.choice=original
+                advance('pruned')
+            elif phase=='pruned':
+                animation=p.library.animation(state['prune_animation'])
+                assert animation is not None and animation.ready,'Removing the source must keep the generated Animation'
+                assert state['prune_source'] not in p.library.resources
+                assert Path(state['prune_folder']).is_dir(),'Source folder must stay on disk'
+                assert p.current_group_id==state['prune_group'] and p.animation_id==state['prune_animation']
+                assert p.library.groups[state['prune_group']].status=='READY'
+                assert not w.library_panel.items.get(('RESOURCE',state['prune_source']))
                 state['project']=str(w.project_file);w.save_project();advance('saved')
             elif phase=='saved':
-                expected={key:state[key] for key in ('project','hero','boss','enemy','hero_animation','boss_animation','loose_group','loose_animation','loose_hash','loose_pixel','loose_sheet')}
+                expected={key:state[key] for key in ('project','hero','boss','enemy','hero_animation','boss_animation','loose_group','loose_animation','loose_hash','loose_pixel','loose_sheet','prune_animation','prune_source','prune_folder','prune_group')}
                 expected['hero_reference']=list(state['hero_reference'].origin);expected['boss_reference']=list(state['boss_reference'].origin)
                 (output/'expected.json').write_text(json.dumps(expected,ensure_ascii=False),encoding='utf-8')
                 report={'status':'passed','build':__build__,'dpr':w.devicePixelRatioF(),'player_template_groups':39,
                     'character_reference_isolation':True,'character_switch_without_processing':True,'loose_group_moved_with_offsets':True,
-                    'export_path_includes_character':True,'characters':3}
+                    'export_path_includes_character':True,'characters':3,'resource_removal_keeps_source_files':True}
                 (output/'validation.json').write_text(json.dumps(report,indent=2),encoding='utf-8');finish(0)
             elif phase=='verify':
                 state.update(json.loads((output/'expected.json').read_text(encoding='utf-8')));w.open_project(state['project']);advance('verified')
@@ -146,10 +176,14 @@ def start_character_smoke(app,w,output,verify=False):
                 assert hero.template_id==PLAYER and boss.template_id==BOSS and enemy.template_id==ENEMY
                 assert [hero.character_reference.origin_x,hero.character_reference.ground_y]==state['hero_reference']
                 assert [boss.character_reference.origin_x,boss.character_reference.ground_y]==state['boss_reference']
-                assert roots(state['hero'])[0]=='Idle' and p.library.character_animation_count(state['hero'])==1
+                assert roots(state['hero'])[0]=='Idle' and p.library.character_animation_count(state['hero'])==2
                 assert p.library.character_animation_count(state['enemy'])==1
                 moved=p.library.groups[state['loose_group']]
                 assert moved.character_id==state['enemy'] and moved.alignment_review_required
+                assert p.library.animation(state['prune_animation']) is not None
+                assert state['prune_source'] not in p.library.resources
+                assert Path(state['prune_folder']).is_dir()
+                assert p.library.groups[state['prune_group']].status=='READY'
                 cached=Path(state['loose_sheet'])
                 assert cached.is_file() and digest(cached)==state['loose_hash']
                 c.select_group(state['loose_group'])
@@ -157,7 +191,7 @@ def start_character_smoke(app,w,output,verify=False):
                 provider=FinalFrameProvider(p,w.cache_dir,live_edit=True)
                 assert hashlib.sha256(provider.get_final_frame(0).tobytes()).hexdigest()==state['loose_pixel']
                 assert w.project.select_animation(state['loose_animation']).animation_transform==AnimationTransform(-12,4)
-                report=json.loads((output/'validation.json').read_text(encoding='utf-8'));report['restart_verified']=True
+                report=json.loads((output/'validation.json').read_text(encoding='utf-8'));report['restart_verified']=True;report['resource_removal_verified']=True
                 (output/'validation.json').write_text(json.dumps(report,indent=2),encoding='utf-8');finish(0)
         except Exception:
             log.exception('Character acceptance failed in %s',state['phase']);(output/'failed.txt').write_text(state['phase'],encoding='utf-8');finish(1)

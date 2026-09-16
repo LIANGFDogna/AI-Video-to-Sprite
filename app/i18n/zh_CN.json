@@ -841,5 +841,17 @@
   "Animations: {animations}": "动画数：{animations}",
   "Move contents to Loose Groups and delete this Character?": "将内容移到游离 Group 并删除该角色？",
   "Remove this empty Character?": "删除这个空角色？",
-  "Character Reference": "角色坐标基准"
+  "Character Reference": "角色坐标基准",
+  "Remove from Project": "从项目中移除",
+  "Show in Explorer": "在资源管理器中显示",
+  "Remove Resource": "移除资源",
+  "Resource does not exist": "资源不存在",
+  "Remove this resource from the project?\n\nRelated: {animations} Animations / {sheets} Sprite Sheets": "从项目中移除此资源？\n\n该资源关联：{animations} 个 Animation / {sheets} 个 Sprite Sheet",
+  "Remove source only, keep generated results": "仅移除源资源，保留已生成结果",
+  "Remove related Animations and Sprite Sheets": "同时移除关联 Animation / Sprite Sheet",
+  "Remove this resource from the project?": "从项目中移除此资源？",
+  "Remove this Sprite Sheet from the project?": "从项目中移除此 Sprite Sheet？",
+  "The animation is the current Character Reference. Clear the Character Reference and remove it?": "该动画正在作为角色坐标基准。清除角色基准并移除？",
+  "The resource could not be found on disk.": "在磁盘上找不到该资源。",
+  "Resource removed from the project: {name}": "已从项目中移除资源：{name}"
 }

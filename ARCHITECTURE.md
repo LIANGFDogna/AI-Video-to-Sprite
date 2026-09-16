@@ -1,5 +1,11 @@
 # Architecture · v0.4
 
+## Project Library 资源移除（2026-09-16 修复）
+
+`ProjectLibrary.remove_resource(ident, cascade=False, clear_references=False)` 与 `remove_animation(ident, clear_references=False)` 是唯一入口：只操作 `resources` 字典、Group 的 `ui_state`/`animation_states` 与角色基准，不接触磁盘。移除 Animation 时会同步删除其 GENERATED_SPRITE_SHEET，并在来源记录不再被任何 Animation 引用时移除该来源记录；移除 Source（`cascade=False`）时把关联 Animation 的 `source_id` 置空，保留其缓存与成品。
+
+`LibraryController.remove_resource()` 负责交互与一致性：Source 有派生结果时用三选项对话框（默认保留结果），基准动画必须先清除基准；移除后清理项目级动画快照（`project.animations`）与当前动画身份，避免 `ensure_library()` 依据快照把已删除记录复活；随后按需 `select_group()` 回退到同 Group 的下一个动画或空组状态。撤销/重做沿用既有 Library 命令历史（整库快照差分），因此恢复资源记录、顺序与关联关系不需要重新 Decode。
+
 ## Character 层与模板注册表（Phase 2B，2026-09-16）
 
 `app/models/project_library.py` 新增 `Character`（id / name / template_id / template_version / character_reference / group_ids / created_at / modified_at）以及 `Group.character_id`、`Group.semantic_type`、`Group.alignment_review_required`。`ProjectLibrary` 提供角色 CRUD、`set_group_character`、`remove_character(move_to_loose)`、`character_roots` / `loose_roots` / `character_animation_count` / `character_for_animation`，并在 `validate()` 中强制：角色 ID 与名称合法且唯一、Group 的 character_id 必须存在、嵌套 Group 必须与父级同角色、角色 Group 索引一致、**角色基准动画必须属于同一角色**。同级 Group 名称唯一性与 order 排序按角色树分桶（`ordered_children`），因此 Player 与 Boss 可以同时拥有 `Idle`。

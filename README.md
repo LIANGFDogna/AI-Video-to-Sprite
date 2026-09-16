@@ -1,5 +1,15 @@
 # AI Video to Sprite · v0.4
 
+## Project Library 资源移除（2026-09-16 修复）
+
+资源节点右键菜单现在包含：重命名 / 移动到 Group / 从项目中移除 / 在资源管理器中显示；Animation 与 Sprite Sheet 节点另有导出。**移除只删除 `.aivsprite` 中的项目记录**，绝不删除原始 MP4 / MOV / PNG / 序列帧目录，也不删除导出文件。
+
+- Source 资源：若已产生 Animation / Sprite Sheet，会提示「仅移除源资源，保留已生成结果」（默认）或「同时移除关联 Animation / Sprite Sheet」，以及取消。保留结果时，Animation 会保留并断开对源素材的引用（缓存与成品继续可用）。
+- Animation 资源：移除动画本身、其生成 Sheet、历史与工作区引用；若该动画是角色坐标基准，必须先确认「清除角色基准并移除」。移除后若来源记录已无动画引用，会一并移除该来源记录（磁盘文件不动）。
+- Sprite Sheet 资源：只移除项目记录；导入的原图与生成的 Sheet 都保留在磁盘。
+- 移除当前选中的资源时，工作区自动回退到同 Group 的下一个可用动画；若该 Group 已空，则显示空组状态，不保留旧预览或旧时间线。Group 状态与计数立即重算（EMPTY / SOURCE_ONLY / READY / WARNING）。
+- 移除是 Library 撤销命令：Ctrl+Z 恢复资源记录、原 Group 位置、排序与关联关系（不重新 Decode）。
+
 ## Character 与角色模板（Phase 2B，2026-09-16）
 
 层级从「Project → Group」扩展为 **Project → Character → Group → Import Media → Animation → Sprite Sheet → Group Export**。Project Canvas 仍是项目级，**Character Reference 属于角色**，Group 是角色下的动画工作区，Animation Transform 属于动画。
