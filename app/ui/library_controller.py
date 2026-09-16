@@ -11,6 +11,8 @@ from PySide6.QtWidgets import QDialog, QInputDialog, QLineEdit
 from app.i18n import t
 from app.models.project import Project
 from app.models.animation_set import AnimationSlot
+from app.models.ids import now_stamp
+from app.models.state_machine import Condition, State, StateMachine, StateParameter, coerce_value
 from app.models.character_templates import REGISTRY
 from app.models.project_library import ProjectLibrary, WorkspaceState, unique_name
 from app.ui.character_dialogs import CharacterDialog
@@ -396,6 +398,112 @@ class LibraryController(QObject):
                 MessageBox.StandardButton.Cancel)!=MessageBox.StandardButton.Yes:return None
         self.mutate(lambda lib:lib.remove_animation_set(set_id),'Remove Animation Set')
         return set_id
+
+    def state_machines(self, character_id=None):
+        h=self.host;character_id=character_id or h.project.current_character_id
+        return h.project.library.state_machines_for(character_id) if character_id else []
+
+    def state_content_choices(self, sets=False):
+        h=self.host;character=h.project.active_character()
+        if character is None:return []
+        library=h.project.library
+        if sets:
+            return [(row.name,row.id) for row in library.animation_sets_for(character.id)]
+        return [(resource.name,resource.animation_id) for resource in library.resources.values()
+                if resource.kind=='ANIMATION' and resource.ready and library.groups[resource.group_id].character_id==character.id]
+
+    def new_state_machine(self,name=None,character_id=None):
+        h=self.host;character_id=character_id or h.project.current_character_id
+        if not character_id:return None
+        if name is None:
+            name,ok=QInputDialog.getText(h,t('New State Machine'),t('State Machine name'),QLineEdit.EchoMode.Normal,t('State Machine'))
+            if not ok:return None
+        machine=self.mutate(lambda lib:lib.add_state_machine(character_id,name),'New State Machine')
+        self.refresh()
+        return machine
+
+    def template_state_machines(self):
+        h=self.host;character=h.project.active_character()
+        if character is None:return []
+        if character.template_id not in REGISTRY.ids():
+            h.status.setText(t('This Character has no template to create a State Machine from.'));return []
+        created=self.mutate(lambda lib:REGISTRY.get(character.template_id).create_state_machines(lib,character),'State Machine From Template')
+        self.refresh()
+        return created or []
+
+    def remove_state_machine(self,ident,confirmed=False):
+        if self.host.project.library.state_machine(ident) is None:return None
+        if not confirmed and MessageBox.question(self.host,t('Remove State Machine'),
+                t('Remove this State Machine? Animations and Animation Sets are never deleted.'),
+                MessageBox.StandardButton.Yes|MessageBox.StandardButton.Cancel,
+                MessageBox.StandardButton.Cancel)!=MessageBox.StandardButton.Yes:return None
+        self.mutate(lambda lib:lib.remove_state_machine(ident),'Remove State Machine')
+        return ident
+
+    def add_state(self,machine_id,name,kind,binding_id):
+        def operation(lib):
+            machine=lib.state_machine(machine_id)
+            return machine.add_state(name,kind=kind,animation_id=binding_id if kind=='animation' else None,
+                set_id=binding_id if kind=='set' else None)
+        return self.mutate(operation,'Add State')
+
+    def remove_state(self,machine_id,state_id):
+        self.mutate(lambda lib:lib.state_machine(machine_id).remove_state(state_id),'Remove State')
+
+    def set_entry_state(self,machine_id,state_id):
+        def operation(lib):
+            machine=lib.state_machine(machine_id);machine.entry_state=state_id;machine.modified_at=now_stamp();return state_id
+        return self.mutate(operation,'Set Entry State')
+
+    def add_transition(self,machine_id,from_state,to_state):
+        if from_state is None or to_state is None:return None
+        return self.mutate(lambda lib:lib.state_machine(machine_id).add_transition(from_state,to_state),'Add Transition')
+
+    def remove_transition(self,machine_id,transition_id):
+        self.mutate(lambda lib:lib.state_machine(machine_id).remove_transition(transition_id),'Remove Transition')
+
+    def condition_value(self,machine_id,parameter,text):
+        parameter_row=self.host.project.library.state_machine(machine_id).parameter(parameter)
+        if parameter_row is None:raise ValueError('State Machine condition uses an unknown parameter')
+        text=text.strip()
+        if parameter_row.type=='bool':return text.casefold() in ('1','true','yes','on')
+        if parameter_row.type=='int':return int(text)
+        if parameter_row.type=='float':return float(text)
+        return text.casefold() in ('1','true','yes','on')
+
+    def add_condition(self,machine_id,transition_id,parameter,operator,value):
+        try:
+            parsed=self.condition_value(machine_id,parameter,value)
+        except (ValueError,TypeError):
+            self.host.status.setText(t('Condition value is invalid for this parameter.'));return None
+        def operation(lib):
+            row=lib.state_machine(machine_id).transition(transition_id)
+            row.conditions.append(Condition(parameter,operator,parsed));row.validate({s.id for s in lib.state_machine(machine_id).states},
+                {p.name:p for p in lib.state_machine(machine_id).parameters});return row
+        return self.mutate(operation,'Add Condition')
+
+    def remove_condition(self,machine_id,transition_id,index):
+        def operation(lib):
+            row=lib.state_machine(machine_id).transition(transition_id)
+            del row.conditions[index];return row
+        return self.mutate(operation,'Remove Condition')
+
+    def save_state_positions(self,machine_id):
+        "Node drags are UI state; store them on the machine and mark the project dirty."
+        h=self.host;machine=h.project.library.state_machine(machine_id) if machine_id else None
+        if machine is None:return
+        machine.modified_at=now_stamp();h.dirty=True;self.refresh()
+
+    def open_state_machine_dialog(self,machine_id=None):
+        self.host.open_state_machine(machine_id)
+
+    def preview_state_machine(self,machine_id):
+        machine=self.host.project.library.state_machine(machine_id)
+        if machine is not None:self.host.open_state_machine(machine.id)
+
+    def export_state_machine(self,machine_id):
+        machine=self.host.project.library.state_machine(machine_id)
+        if machine is not None:self.host.export_state_machine(machine)
 
     def preview_animation_set(self,set_id):
         row=self.host.project.library.animation_sets.get(set_id)

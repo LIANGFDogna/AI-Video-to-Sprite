@@ -68,6 +68,17 @@ class CharacterPanel(QWidget):
             second.addWidget(self._set_button(label,callback))
         sets_layout.addLayout(second)
         layout.addWidget(sets_group)
+        machines_group=QGroupBox(t('State Machines'))
+        machines_layout=QVBoxLayout(machines_group)
+        self.machines_list=QListWidget();self.machines_list.setMaximumHeight(110)
+        machines_layout.addWidget(self.machines_list)
+        machine_row=QHBoxLayout()
+        for label,callback in (('Open State Machine',lambda:self.controller and self.controller.open_state_machine_dialog()),
+                               ('New State Machine',lambda:self.controller and self.controller.new_state_machine()),
+                               ('From Template',lambda:self.controller and self.controller.template_state_machines())):
+            machine_row.addWidget(self._set_button(label,callback))
+        machines_layout.addLayout(machine_row)
+        layout.addWidget(machines_group)
         layout.addStretch()
 
     def _set_button(self,label,callback):
@@ -111,6 +122,17 @@ class CharacterPanel(QWidget):
         self.set_reference.setVisible(reference is None)
         self.edit_reference.setVisible(reference is not None)
         self.refresh_sets(character)
+        self.refresh_machines(character)
+
+    def refresh_machines(self,character=None):
+        self.machines_list.clear()
+        if character is None:return
+        for machine in self.host.project.library.state_machines_for(character.id):
+            entry=machine.state(machine.entry_state)
+            state_count=len(machine.states)
+            transition_count=len(machine.transitions)
+            self.machines_list.addItem(t('{name} - {states} states, entry {entry}, {transitions} transitions',name=machine.name,
+                states=state_count,entry=entry.name if entry else '-',transitions=transition_count))
 
     def refresh_sets(self,character=None):
         self.sets_list.blockSignals(True);self.sets_list.clear()

@@ -944,6 +944,49 @@ class MainWindow(QMainWindow):
         review.show()
         return review
 
+    def open_state_machine(self, machine_id=None):
+        from app.ui.state_machine_panel import StateMachineDialog
+        if getattr(self,'state_machine_dialog',None) is not None:
+            self.state_machine_dialog.refresh_machines(machine_id)
+            self.state_machine_dialog.raise_();self.state_machine_dialog.activateWindow()
+            return self.state_machine_dialog
+        dialog=StateMachineDialog(self,self.library_controller)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        dialog.destroyed.connect(lambda: setattr(self,'state_machine_dialog',None))
+        self.state_machine_dialog=dialog
+        if machine_id:dialog.refresh_machines(machine_id)
+        dialog.show()
+        return dialog
+
+    def preview_state(self, machine_id, state_id):
+        from app.core.state_machine import state_provider
+        machine=self.project.library.state_machine(machine_id)
+        if machine is None:return None
+        try:
+            provider=state_provider(self.project,self.project_file,machine,state_id)
+            if not len(provider):
+                raise ValueError('Bind content with existing results before playing this State.')
+            review=AnimationPreview(provider,None,self)
+        except Exception as error:
+            self._failed(str(error));return None
+        self.review_windows.append(review)
+        review.destroyed.connect(lambda: self.review_windows.remove(review) if review in self.review_windows else None)
+        review.show()
+        return review
+
+    def export_state_machine(self, machine):
+        if self.interaction_busy:return
+        from app.core.state_machine_export import export_state_machine as run_export
+        parent=QFileDialog.getExistingDirectory(self,t('Export State Machine'),self._project_folder('exports'),purpose='group_export')
+        if not parent:return
+        destination=Path(parent)
+        def operation(progress,cancel):
+            return run_export(self.project,self.project_file,machine,destination,progress,cancel)
+        def success(result):
+            self._remember_path('group_export',destination)
+            self.status.setText(t('State Machine exported: {path}',path=result['destination']))
+        self._run(operation,success,t('Exporting State Machine'))
+
     def export_animation_set(self, animation_set):
         if self.interaction_busy:return
         from app.core.set_export import export_animation_set as run_export

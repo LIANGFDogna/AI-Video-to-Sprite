@@ -30,6 +30,32 @@ class TemplateSetSlot:
 
 
 @dataclass(frozen=True)
+class TemplateMachineState:
+    name: str
+    animation_name: str | None = None
+    set_name: str | None = None
+    position: tuple[float, float] = (0.0, 0.0)
+
+
+@dataclass(frozen=True)
+class TemplateMachineTransition:
+    from_state: str
+    to_state: str
+    conditions: tuple = ()
+    priority: int = 0
+    exit_time: float = 0.0
+    interruptible: bool = True
+
+
+@dataclass(frozen=True)
+class TemplateMachine:
+    name: str
+    states: tuple[TemplateMachineState, ...]
+    transitions: tuple[TemplateMachineTransition, ...]
+    parameters: tuple[tuple[str, str, object], ...] = ()
+
+
+@dataclass(frozen=True)
 class TemplateSet:
     name: str
     semantic_type: str
@@ -46,6 +72,53 @@ class CharacterTemplate:
     label: str
     groups: tuple[TemplateGroup, ...] = ()
     sets: tuple[TemplateSet, ...] = ()
+    machines: tuple[TemplateMachine, ...] = ()
+
+    def create_state_machines(self, library, character):
+        """Create or extend template State Machines. Missing content is skipped, never duplicated."""
+        created = []
+        # Bind the Character's Animation Set slots first so Set-backed States resolve immediately.
+        for animation_set in library.animation_sets_for(character.id):
+            library.auto_match_set(animation_set.id)
+        for template in self.machines:
+            machine = next((row for row in library.state_machines_for(character.id) if row.name == template.name), None)
+            new = machine is None
+            if new:
+                machine = library.add_state_machine(character.id, template.name,
+                    parameters=[dict(name=name, type=kind, default=default) for name, kind, default in template.parameters])
+            added, skipped = [], []
+            for state in template.states:
+                if machine.state_by_name(state.name) is not None:
+                    continue
+                animation_id = set_id = None
+                if state.set_name:
+                    row = next((item for item in library.animation_sets_for(character.id) if item.name == state.set_name), None)
+                    set_id = row.id if row else None
+                elif state.animation_name:
+                    row = next((resource for resource in library.resources.values()
+                        if resource.kind == "ANIMATION" and self.owns(library, character, resource)
+                        and normalize_key(resource.name) == normalize_key(state.animation_name)), None)
+                    animation_id = row.animation_id if row else None
+                if state.set_name and set_id is None or state.animation_name and animation_id is None:
+                    skipped.append(state.name)
+                    continue
+                added.append(machine.add_state(state.name, kind="set" if set_id else "animation",
+                    animation_id=animation_id, set_id=set_id, position=state.position))
+            for transition in template.transitions:
+                source = machine.state_by_name(transition.from_state)
+                target = machine.state_by_name(transition.to_state)
+                if source is None or target is None:
+                    continue
+                if any(row.from_state == source.id and row.to_state == target.id for row in machine.transitions):
+                    continue
+                machine.add_transition(source.id, target.id,
+                    conditions=[dict(parameter=name, operator=operator, value=value) for name, operator, value in transition.conditions],
+                    priority=transition.priority, exit_time=transition.exit_time, interruptible=transition.interruptible)
+            if machine.entry_state is None and machine.states:
+                machine.entry_state = machine.states[0].id
+            machine.validate()
+            created.append((machine, new, added, skipped))
+        return created
 
     def create_animation_sets(self, library, character, only_default=True):
         "Create template Sets once; existing Sets are never duplicated or overwritten."
@@ -117,6 +190,40 @@ PLAYER_SETS = (
 )
 
 
+PLAYER_MACHINE = TemplateMachine("Character",
+    states=(
+        TemplateMachineState("Idle", animation_name="Idle", position=(0.0, 0.0)),
+        TemplateMachineState("Run", animation_name="Run", position=(220.0, 0.0)),
+        TemplateMachineState("Jump", set_name="Jump", position=(440.0, -120.0)),
+        TemplateMachineState("Dash", set_name="Dash", position=(440.0, 120.0)),
+        TemplateMachineState("Attack", set_name="Combat", position=(660.0, 0.0)),
+        TemplateMachineState("Hurt", animation_name="Hurt", position=(220.0, -220.0)),
+        TemplateMachineState("Death", animation_name="Death", position=(440.0, -320.0))),
+    transitions=(
+        TemplateMachineTransition("Idle", "Run", (("speed", ">", 0),)),
+        TemplateMachineTransition("Run", "Idle", (("speed", "<=", 0),)),
+        TemplateMachineTransition("Idle", "Jump", (("jump", "==", True),)),
+        TemplateMachineTransition("Run", "Jump", (("jump", "==", True),)),
+        TemplateMachineTransition("Jump", "Idle", (("is_on_floor", "==", True),)),
+        TemplateMachineTransition("Idle", "Dash", (("dash", "==", True),)),
+        TemplateMachineTransition("Run", "Dash", (("dash", "==", True),)),
+        TemplateMachineTransition("Dash", "Idle", (("speed", "<=", 0),)),
+        TemplateMachineTransition("Idle", "Attack", (("attack", "==", True),)),
+        TemplateMachineTransition("Run", "Attack", (("attack", "==", True),)),
+        TemplateMachineTransition("Attack", "Idle"),
+        TemplateMachineTransition("Idle", "Hurt", (("hurt", "==", True),), priority=10),
+        TemplateMachineTransition("Run", "Hurt", (("hurt", "==", True),), priority=10),
+        TemplateMachineTransition("Jump", "Hurt", (("hurt", "==", True),), priority=10),
+        TemplateMachineTransition("Dash", "Hurt", (("hurt", "==", True),), priority=10),
+        TemplateMachineTransition("Attack", "Hurt", (("hurt", "==", True),), priority=10),
+        TemplateMachineTransition("Hurt", "Idle"),
+        TemplateMachineTransition("Idle", "Death", (("death", "==", True),), priority=20),
+        TemplateMachineTransition("Run", "Death", (("death", "==", True),), priority=20),
+        TemplateMachineTransition("Hurt", "Death", (("death", "==", True),), priority=20)),
+    parameters=(("speed", "float", 0), ("is_on_floor", "bool", True), ("jump", "trigger", False),
+        ("dash", "trigger", False), ("attack", "trigger", False), ("hurt", "trigger", False), ("death", "trigger", False)))
+
+
 PLAYER_TEMPLATE = CharacterTemplate(PLAYER, 1, "Metroidvania Player", (
     group("Idle", "idle"),
     group("Movement/Walk", "locomotion"), group("Movement/Run", "locomotion"),
@@ -135,7 +242,7 @@ PLAYER_TEMPLATE = CharacterTemplate(PLAYER, 1, "Metroidvania Player", (
     group("Interaction/Crouch", "interaction"), group("Interaction/Push", "interaction"),
     group("Interaction/Pull", "interaction"),
     group("Reaction/Hurt", "reaction"), group("Reaction/Knockback", "reaction"),
-    group("Reaction/Death", "reaction")), sets=PLAYER_SETS)
+    group("Reaction/Death", "reaction")), sets=PLAYER_SETS, machines=(PLAYER_MACHINE,))
 ENEMY_TEMPLATE = CharacterTemplate(ENEMY, 1, "Enemy", (
     group("Idle", "idle"), group("Walk", "locomotion"), group("Run", "locomotion"),
     group("Attack", "combat"), group("Hurt", "reaction"),

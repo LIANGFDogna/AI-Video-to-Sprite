@@ -244,7 +244,25 @@ if ($spriteSetVerify.ExitCode -ne 0) { throw "Packaged Animation Set restart ver
 $spriteSetReport = Get-Content -LiteralPath (Join-Path $spriteSetDirectory 'validation.json') -Raw | ConvertFrom-Json
 if ($spriteSetReport.status -ne 'passed' -or -not $spriteSetReport.restart_verified -or -not $spriteSetReport.jump_ready) { throw 'Missing Animation Set acceptance result.' }
 
+$spriteMachineDirectory = Join-Path $PSScriptRoot ('build\machine-smoke-' + [Guid]::NewGuid().ToString('N'))
+$spriteMachineSmoke = Start-Process -FilePath $spriteExecutable -ArgumentList @('--smoke-state-machine', ('"' + $spriteMachineDirectory + '"')) -WindowStyle Hidden -PassThru
+if (-not $spriteMachineSmoke.WaitForExit(360000)) {
+    $spriteMachineSmoke.Kill()
+    throw 'Packaged State Machine graph / simulator / export timed out.'
+}
+$spriteMachineSmoke.Refresh()
+if ($spriteMachineSmoke.ExitCode -ne 0) { throw "Packaged State Machine failed ($($spriteMachineSmoke.ExitCode)). Check logs/app.log." }
+$spriteMachineVerify = Start-Process -FilePath $spriteExecutable -ArgumentList @('--smoke-state-machine', ('"' + $spriteMachineDirectory + '"'), '--verify-state-machine') -WindowStyle Hidden -PassThru
+if (-not $spriteMachineVerify.WaitForExit(220000)) {
+    $spriteMachineVerify.Kill()
+    throw 'Packaged State Machine restart verification timed out.'
+}
+$spriteMachineVerify.Refresh()
+if ($spriteMachineVerify.ExitCode -ne 0) { throw "Packaged State Machine restart verification failed ($($spriteMachineVerify.ExitCode)). Check logs/app.log." }
+$spriteMachineReport = Get-Content -LiteralPath (Join-Path $spriteMachineDirectory 'validation.json') -Raw | ConvertFrom-Json
+if ($spriteMachineReport.status -ne 'passed' -or -not $spriteMachineReport.restart_verified -or -not $spriteMachineReport.set_state_plays_via_set_provider) { throw 'Missing State Machine acceptance result.' }
+
 $spritePathReports = & (Join-Path $PSScriptRoot 'scripts\verify_path_ui.ps1') -Executable $spriteExecutable
-$spriteReceipt = @{ status = 'passed'; build_version = '20260916-animation-sets'; path_validation = $spritePathReports; reference_validation = $spriteReferenceReports; group_validation = $spriteGroupReport; character_validation = $spriteCharacterReport; frame_validation = $spriteFrameReport; set_validation = $spriteSetReport; editor_validation = $spriteEditorReport; executable_sha256 = (Get-FileHash -LiteralPath $spriteExecutable -Algorithm SHA256).Hash; verified_at = (Get-Date).ToString('o') }
+$spriteReceipt = @{ status = 'passed'; build_version = '20260917-state-machine'; path_validation = $spritePathReports; reference_validation = $spriteReferenceReports; group_validation = $spriteGroupReport; character_validation = $spriteCharacterReport; frame_validation = $spriteFrameReport; set_validation = $spriteSetReport; machine_validation = $spriteMachineReport; editor_validation = $spriteEditorReport; executable_sha256 = (Get-FileHash -LiteralPath $spriteExecutable -Algorithm SHA256).Hash; verified_at = (Get-Date).ToString('o') }
 $spriteReceipt | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $spriteReleaseDirectory 'release-validation.json') -Encoding UTF8
 Write-Host "Built $spriteExecutable. Video input uses FFmpeg; frame sequence input does not. All release checks passed."

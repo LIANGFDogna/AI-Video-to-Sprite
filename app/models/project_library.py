@@ -6,6 +6,7 @@ import math
 
 from app.models.animation_set import AnimationSet, AnimationSlot, normalize_key
 from app.models.character_reference import CharacterReference
+from app.models.state_machine import Condition, State, StateMachine, StateParameter, Transition
 
 SOURCE_KINDS = {"SOURCE_VIDEO", "SOURCE_SEQUENCE", "SOURCE_SPRITE_SHEET"}
 RESOURCE_KINDS = SOURCE_KINDS | {"ANIMATION", "GENERATED_SPRITE_SHEET"}
@@ -121,6 +122,7 @@ class ProjectLibrary:
     resources: dict[str, LibraryResource] = field(default_factory=dict)
     characters: dict[str, Character] = field(default_factory=dict)
     animation_sets: dict[str, AnimationSet] = field(default_factory=dict)
+    state_machines: dict[str, StateMachine] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data):
@@ -142,7 +144,16 @@ class ProjectLibrary:
             value = copy.deepcopy(value)
             value["slots"] = [AnimationSlot(**slot) for slot in value.get("slots", [])]
             sets[ident] = AnimationSet(**value)
-        result = cls(data.get("version", 1), groups, {k: LibraryResource(**v) for k, v in data.get("resources", {}).items()}, characters, sets)
+        machines = {}
+        for ident, value in (data.get("state_machines") or {}).items():
+            value = copy.deepcopy(value)
+            value["states"] = [State(**state) for state in value.get("states", [])]
+            value["transitions"] = [Transition(from_state=row["from_state"], to_state=row["to_state"], id=row.get("id"),
+                conditions=[Condition(**condition) for condition in row.get("conditions", [])], priority=row.get("priority", 0),
+                exit_time=row.get("exit_time", 0.0), interruptible=row.get("interruptible", True)) for row in value.get("transitions", [])]
+            value["parameters"] = [StateParameter(**parameter) for parameter in value.get("parameters", [])]
+            machines[ident] = StateMachine(**value)
+        result = cls(data.get("version", 1), groups, {k: LibraryResource(**v) for k, v in data.get("resources", {}).items()}, characters, sets, machines)
         result.refresh_character_groups()
         result.validate()
         return result
@@ -214,6 +225,23 @@ class ProjectLibrary:
                 owner = next((r for r in self.resources.values() if r.kind == "ANIMATION" and r.animation_id == animation_id), None)
                 if owner is None or self.groups[owner.group_id].character_id != animation_set.character_id:
                     raise ValueError("Animation Set bindings must belong to the same Character")
+        machine_names = set()
+        for ident, machine in self.state_machines.items():
+            machine.validate()
+            if ident != machine.id or machine.character_id not in self.characters:
+                raise ValueError("State Machine Character does not exist")
+            key = machine.character_id, machine.name.casefold()
+            if key in machine_names:
+                raise ValueError("State Machine names must be unique per Character")
+            machine_names.add(key)
+            for animation_id in machine.bound_animation_ids():
+                owner = next((r for r in self.resources.values() if r.kind == "ANIMATION" and r.animation_id == animation_id), None)
+                if owner is None or self.groups[owner.group_id].character_id != machine.character_id:
+                    raise ValueError("State Machine bindings must belong to the same Character")
+            for set_id in machine.bound_set_ids():
+                row = self.animation_sets.get(set_id)
+                if row is None or row.character_id != machine.character_id:
+                    raise ValueError("State Machine bindings must belong to the same Character")
         for ident, character in self.characters.items():
             members = {g.id for g in self.groups.values() if g.character_id == ident}
             if set(character.group_ids) != members:
@@ -274,7 +302,7 @@ class ProjectLibrary:
         group.name = unique_name(name, [g.name for g in self.ordered_children(group.parent_id, group.character_id) if g.id != ident])
         return group.name
 
-    def move_group(self, ident, parent_id, index=None, clear_references=False, clear_sets=False):
+    def move_group(self, ident, parent_id, index=None, clear_references=False, clear_sets=False, clear_machines=False):
         if parent_id is not None and parent_id not in self.groups:
             raise ValueError("Group parent does not exist")
         if parent_id in self.descendants(ident):
@@ -283,6 +311,7 @@ class ProjectLibrary:
         previous = self.groups[ident].character_id
         self.check_reference_move(ident, owner, clear_references)
         self.check_set_move(ident, owner, clear_sets)
+        self.check_machine_move(ident, owner, clear_machines)
         group = self.groups[ident]
         siblings = [g for g in self.ordered_children(parent_id, owner) if g.id != ident]
         group.name = unique_name(group.name, [g.name for g in siblings])
@@ -394,12 +423,13 @@ class ProjectLibrary:
         for member in self.descendants(group_id):
             self.groups[member].alignment_review_required = True
 
-    def set_group_character(self, group_id, character_id, clear_references=False, clear_sets=False):
+    def set_group_character(self, group_id, character_id, clear_references=False, clear_sets=False, clear_machines=False):
         if character_id is not None and character_id not in self.characters:
             raise ValueError("Character does not exist")
         previous = self.groups[group_id].character_id
         self.check_reference_move(group_id, character_id, clear_references)
         self.check_set_move(group_id, character_id, clear_sets)
+        self.check_machine_move(group_id, character_id, clear_machines)
         self.reassign_character(group_id, character_id)
         if previous != character_id:
             self.mark_alignment_review(group_id)
@@ -488,7 +518,12 @@ class ProjectLibrary:
         row.modified_at = now_stamp()
         return row.name
 
-    def remove_animation_set(self, ident):
+    def remove_animation_set(self, ident, clear_machines=False):
+        users = self.state_machine_references(set_id=ident)
+        if users and not clear_machines:
+            raise ValueError("Animation Set is used by a State Machine")
+        if users:
+            self.clear_state_machine_references(set_id=ident)
         row = self.animation_sets.pop(ident, None)
         if row is None:
             raise ValueError("Animation Set does not exist")
@@ -561,11 +596,77 @@ class ProjectLibrary:
         return [character for character in self.characters.values()
                 if character.character_reference and character.character_reference.reference_animation_id == animation_id]
 
+    def state_machines_for(self, character_id):
+        return [row for row in self.state_machines.values() if row.character_id == character_id]
+
+    def state_machine(self, ident):
+        return self.state_machines.get(ident)
+
+    def state_machine_references(self, animation_id=None, set_id=None):
+        "[(machine, state)] bound to one Animation or Animation Set."
+        result = []
+        for machine in self.state_machines.values():
+            for state in machine.states:
+                if animation_id is not None and state.kind == "animation" and state.animation_id == animation_id:
+                    result.append((machine, state))
+                if set_id is not None and state.kind == "set" and state.set_id == set_id:
+                    result.append((machine, state))
+        return result
+
+    def clear_state_machine_references(self, animation_id=None, set_id=None):
+        changed = []
+        for machine in self.state_machines.values():
+            if animation_id is not None and machine.clear_animation(animation_id):
+                changed.append(machine)
+            if set_id is not None and machine.clear_set(set_id):
+                changed.append(machine)
+        return changed
+
+    def add_state_machine(self, character_id, name, states=(), transitions=(), parameters=(), entry_state=None):
+        if character_id not in self.characters:
+            raise ValueError("Character does not exist")
+        existing = [row.name for row in self.state_machines_for(character_id)]
+        machine = StateMachine(unique_name(name, existing), character_id,
+            states=[row if isinstance(row, State) else State(**row) for row in states],
+            transitions=[row if isinstance(row, Transition) else Transition(**row) for row in transitions],
+            parameters=[row if isinstance(row, StateParameter) else StateParameter(**row) for row in parameters],
+            entry_state=entry_state)
+        self.state_machines[machine.id] = machine
+        if machine.entry_state is None and machine.states:
+            machine.entry_state = machine.states[0].id
+        machine.validate()
+        return machine
+
+    def rename_state_machine(self, ident, name):
+        machine = self.state_machines[ident]
+        machine.name = unique_name(name, [other.name for other in self.state_machines_for(machine.character_id) if other.id != ident])
+        machine.modified_at = now_stamp()
+        return machine.name
+
+    def remove_state_machine(self, ident):
+        machine = self.state_machines.pop(ident, None)
+        if machine is None:
+            raise ValueError("State Machine does not exist")
+        return machine
+
     def set_references_for_group(self, group_id):
         "[(set, slot)] bound to Animations inside this Group subtree."
         members = set(self.descendants(group_id))
         owners = {r.animation_id for r in self.resources.values() if r.kind == "ANIMATION" and r.group_id in members}
         return [(row, slot) for row in self.animation_sets.values() for slot in row.slots if slot.animation_id in owners]
+
+    def check_machine_move(self, group_id, character_id, clear_machines=False):
+        "State Machines may never reference another Character; moving out requires an explicit clear."
+        members = set(self.descendants(group_id))
+        owners = {r.animation_id for r in self.resources.values() if r.kind == "ANIMATION" and r.group_id in members}
+        blocking = [(machine, state) for machine in self.state_machines.values() if machine.character_id != character_id
+                    for state in machine.states if state.kind == "animation" and state.animation_id in owners]
+        if blocking and not clear_machines:
+            raise ValueError("Animation is used by a State Machine")
+        for animation_id in owners:
+            if clear_machines:
+                self.clear_state_machine_references(animation_id=animation_id)
+        return blocking
 
     def check_set_move(self, group_id, character_id, clear_sets=False):
         "Animation Sets may never reference another Character; moving out requires an explicit clear."
@@ -580,7 +681,7 @@ class ProjectLibrary:
                 self.clear_animation_set_references(animation_id)
         return blocking
 
-    def remove_animation(self, ident, clear_references=False, clear_sets=False):
+    def remove_animation(self, ident, clear_references=False, clear_sets=False, clear_machines=False):
         "Drop one Animation record with its generated sheet, history and workspace references."
         row = self.resources.get(ident)
         if row is None:
@@ -597,6 +698,11 @@ class ProjectLibrary:
             raise ValueError("Animation is used by an Animation Set")
         if set_users:
             self.clear_animation_set_references(row.animation_id)
+        machine_users = self.state_machine_references(animation_id=row.animation_id)
+        if machine_users and not clear_machines:
+            raise ValueError("Animation is used by a State Machine")
+        if machine_users:
+            self.clear_state_machine_references(animation_id=row.animation_id)
         for character in blocking:
             character.character_reference = None
             character.modified_at = now_stamp()
@@ -617,7 +723,7 @@ class ProjectLibrary:
         self.refresh_status()
         return removed
 
-    def remove_resource(self, ident, cascade=False, clear_references=False, clear_sets=False):
+    def remove_resource(self, ident, cascade=False, clear_references=False, clear_sets=False, clear_machines=False):
         """Remove Project Library records only; source files and caches on disk stay untouched."""
         row = self.resources.get(ident)
         if row is None:
@@ -627,7 +733,7 @@ class ProjectLibrary:
             animations = self.related_animations(ident)
             if cascade:
                 for animation in animations:
-                    removed.extend(self.remove_animation(animation.id, clear_references, clear_sets=clear_sets))
+                    removed.extend(self.remove_animation(animation.id, clear_references, clear_sets=clear_sets, clear_machines=clear_machines))
             else:
                 for animation in animations:
                     animation.source_id = None
@@ -635,7 +741,7 @@ class ProjectLibrary:
                 removed.append(ident)
                 del self.resources[ident]
         else:
-            removed.extend(self.remove_animation(ident, clear_references, clear_sets=clear_sets))
+            removed.extend(self.remove_animation(ident, clear_references, clear_sets=clear_sets, clear_machines=clear_machines))
         self.refresh_character_groups()
         self.refresh_status()
         return removed

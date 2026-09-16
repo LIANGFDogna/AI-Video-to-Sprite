@@ -11,6 +11,7 @@ from app.exporters.godot_exporter import write_metadata
 from app.exporters.root_motion_exporter import write_root_motion
 from app.models.project_library import unique_name
 from app.utils.ffmpeg import check_cancel
+from app.utils.publish import publish_folder
 
 
 def set_sequence_names(project, animation_set):
@@ -82,7 +83,7 @@ def export_animation_set(project, project_file, animation_set, destination, prog
         (staging / "animation_set.json").write_text(json.dumps(animation_set_metadata(project, animation_set),
             ensure_ascii=False, indent=2), encoding="utf-8")
         check_cancel(cancel)
-        staging.rename(target_root)
+        publish_folder(staging, target_root)
         return dict(destination=str(target_root), resources=len(plan), warnings=warnings, metadata=str(target_root / "animation_set.json"))
     finally:
         if staging.exists():

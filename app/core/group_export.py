@@ -9,6 +9,7 @@ from app.core.project_workspace import sanitize_project_name
 from app.models.project_library import unique_name
 from app.utils.paths import cache_directory
 from app.utils.ffmpeg import check_cancel
+from app.utils.publish import publish_folder
 from app.exporters.image_exporter import copy_file
 from app.exporters.godot_exporter import write_metadata
 from app.exporters.root_motion_exporter import write_root_motion
@@ -169,7 +170,7 @@ def export_group_plan(plan, destination, progress=lambda n, total, message: None
             check_cancel(cancel)
             target = destination/name
             # rename on Windows refuses an existing directory; never replace user content.
-            (staging/name).rename(target)
+            publish_folder(staging/name, target)
             published.append(target)
         return dict(destination=str(destination), resources=len(plan.items), groups=plan.selected_groups, warnings=plan.warnings)
     except Exception:
