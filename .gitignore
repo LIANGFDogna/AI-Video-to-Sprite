@@ -11,6 +11,10 @@ venv/
 .mypy_cache/
 .ruff_cache/
 
+# Local Codex
+.codex/
+.codex_logs/
+
 # Build / packaged EXE
 build/
 dist/
@@ -50,3 +54,4 @@ desktop.ini
 
 # Test generated output
 .test-output/
+before_fix_environment.md
