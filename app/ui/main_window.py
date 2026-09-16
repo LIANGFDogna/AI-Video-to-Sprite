@@ -929,6 +929,34 @@ class MainWindow(QMainWindow):
         review.show()
         return review
 
+    def preview_animation_set(self, animation_set):
+        from app.core.set_preview import SetPreviewProvider
+        try:
+            provider=SetPreviewProvider(self.project,self.project_file,animation_set)
+            if not len(provider):
+                raise ValueError('Bind at least one Animation to preview this Set.')
+            review=AnimationPreview(provider,None,self)
+        except Exception as error:
+            self._failed(str(error));return None
+        review.export_requested.connect(lambda: self.export_animation_set(animation_set))
+        self.review_windows.append(review)
+        review.destroyed.connect(lambda: self.review_windows.remove(review) if review in self.review_windows else None)
+        review.show()
+        return review
+
+    def export_animation_set(self, animation_set):
+        if self.interaction_busy:return
+        from app.core.set_export import export_animation_set as run_export
+        parent=QFileDialog.getExistingDirectory(self,t('Export Animation Set'),self._project_folder('exports'),purpose='group_export')
+        if not parent:return
+        destination=Path(parent)
+        def operation(progress,cancel):
+            return run_export(self.project,self.project_file,animation_set,destination,progress,cancel)
+        def success(result):
+            self._remember_path('group_export',destination)
+            self.status.setText(t('Animation Set exported: {path}',path=result['destination']))
+        self._run(operation,success,t('Exporting Animation Set'))
+
     def _export_notice(self, result):
         for review in self.review_windows:
             if not review.stale:

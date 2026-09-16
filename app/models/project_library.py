@@ -2,10 +2,9 @@
 from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 import copy
-import datetime
 import math
-import uuid
 
+from app.models.animation_set import AnimationSet, AnimationSlot, normalize_key
 from app.models.character_reference import CharacterReference
 
 SOURCE_KINDS = {"SOURCE_VIDEO", "SOURCE_SEQUENCE", "SOURCE_SPRITE_SHEET"}
@@ -13,12 +12,7 @@ RESOURCE_KINDS = SOURCE_KINDS | {"ANIMATION", "GENERATED_SPRITE_SHEET"}
 GROUP_STATES = {"EMPTY", "SOURCE_ONLY", "PROCESSING", "READY", "WARNING"}
 
 
-def new_id():
-    return uuid.uuid4().hex
-
-
-def valid_id(value):
-    return isinstance(value, str) and len(value) == 32 and all(c in "0123456789abcdef" for c in value)
+from app.models.ids import new_id, now_stamp, valid_id  # noqa: F401  (re-exported for existing imports)
 
 
 def unique_name(name, existing, separator=" "):
@@ -84,10 +78,6 @@ class Group:
     alignment_review_required: bool = False
 
 
-def now_stamp():
-    return datetime.datetime.now().astimezone().isoformat(timespec="seconds")
-
-
 @dataclass
 class Character:
     name: str
@@ -130,6 +120,7 @@ class ProjectLibrary:
     groups: dict[str, Group] = field(default_factory=dict)
     resources: dict[str, LibraryResource] = field(default_factory=dict)
     characters: dict[str, Character] = field(default_factory=dict)
+    animation_sets: dict[str, AnimationSet] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data):
@@ -146,7 +137,12 @@ class ProjectLibrary:
             value = copy.deepcopy(value)
             value["character_reference"] = CharacterReference.from_dict(value.get("character_reference"))
             characters[ident] = Character(**value)
-        result = cls(data.get("version", 1), groups, {k: LibraryResource(**v) for k, v in data.get("resources", {}).items()}, characters)
+        sets = {}
+        for ident, value in (data.get("animation_sets") or {}).items():
+            value = copy.deepcopy(value)
+            value["slots"] = [AnimationSlot(**slot) for slot in value.get("slots", [])]
+            sets[ident] = AnimationSet(**value)
+        result = cls(data.get("version", 1), groups, {k: LibraryResource(**v) for k, v in data.get("resources", {}).items()}, characters, sets)
         result.refresh_character_groups()
         result.validate()
         return result
@@ -205,6 +201,19 @@ class ProjectLibrary:
                 raise ValueError("Nested Groups must belong to the same Character")
             if not isinstance(group.semantic_type, str):
                 raise ValueError("Invalid Group metadata")
+        names = set()
+        for ident, animation_set in self.animation_sets.items():
+            animation_set.validate()
+            if ident != animation_set.id or animation_set.character_id not in self.characters:
+                raise ValueError("Animation Set Character does not exist")
+            key = animation_set.character_id, animation_set.name.casefold()
+            if key in names:
+                raise ValueError("Animation Set names must be unique per Character")
+            names.add(key)
+            for animation_id in animation_set.bound_animation_ids | {animation_set.pre_animation, animation_set.post_animation} - {None}:
+                owner = next((r for r in self.resources.values() if r.kind == "ANIMATION" and r.animation_id == animation_id), None)
+                if owner is None or self.groups[owner.group_id].character_id != animation_set.character_id:
+                    raise ValueError("Animation Set bindings must belong to the same Character")
         for ident, character in self.characters.items():
             members = {g.id for g in self.groups.values() if g.character_id == ident}
             if set(character.group_ids) != members:
@@ -265,7 +274,7 @@ class ProjectLibrary:
         group.name = unique_name(name, [g.name for g in self.ordered_children(group.parent_id, group.character_id) if g.id != ident])
         return group.name
 
-    def move_group(self, ident, parent_id, index=None, clear_references=False):
+    def move_group(self, ident, parent_id, index=None, clear_references=False, clear_sets=False):
         if parent_id is not None and parent_id not in self.groups:
             raise ValueError("Group parent does not exist")
         if parent_id in self.descendants(ident):
@@ -273,6 +282,7 @@ class ProjectLibrary:
         owner = self.groups[parent_id].character_id if parent_id is not None else self.groups[ident].character_id
         previous = self.groups[ident].character_id
         self.check_reference_move(ident, owner, clear_references)
+        self.check_set_move(ident, owner, clear_sets)
         group = self.groups[ident]
         siblings = [g for g in self.ordered_children(parent_id, owner) if g.id != ident]
         group.name = unique_name(group.name, [g.name for g in siblings])
@@ -384,11 +394,12 @@ class ProjectLibrary:
         for member in self.descendants(group_id):
             self.groups[member].alignment_review_required = True
 
-    def set_group_character(self, group_id, character_id, clear_references=False):
+    def set_group_character(self, group_id, character_id, clear_references=False, clear_sets=False):
         if character_id is not None and character_id not in self.characters:
             raise ValueError("Character does not exist")
         previous = self.groups[group_id].character_id
         self.check_reference_move(group_id, character_id, clear_references)
+        self.check_set_move(group_id, character_id, clear_sets)
         self.reassign_character(group_id, character_id)
         if previous != character_id:
             self.mark_alignment_review(group_id)
@@ -441,6 +452,105 @@ class ProjectLibrary:
             return None
         return self.characters.get(self.groups[owner.group_id].character_id)
 
+    def animation_sets_for(self, character_id):
+        return [row for row in self.animation_sets.values() if row.character_id == character_id]
+
+    def animation_set(self, ident):
+        return self.animation_sets.get(ident)
+
+    def set_references(self, animation_id):
+        "[(set, slot)] referencing one Animation, for delete / move protection."
+        result = []
+        for row in self.animation_sets.values():
+            for slot in row.slots:
+                if slot.animation_id == animation_id:
+                    result.append((row, slot))
+        return result
+
+    def clear_animation_set_references(self, animation_id):
+        return [row for row in self.animation_sets.values() if row.clear_animation(animation_id)]
+
+    def add_animation_set(self, character_id, name, semantic_type="", slots=(), preview_sequence=None, pre_animation=None, post_animation=None):
+        if character_id not in self.characters:
+            raise ValueError("Character does not exist")
+        existing = [row.name for row in self.animation_sets_for(character_id)]
+        row = AnimationSet(unique_name(name, existing), character_id, semantic_type=semantic_type,
+            slots=[slot if isinstance(slot, AnimationSlot) else AnimationSlot(**slot) for slot in slots],
+            preview_sequence=list(preview_sequence or [slot.id for slot in slots]),
+            pre_animation=pre_animation, post_animation=post_animation)
+        self.animation_sets[row.id] = row
+        row.validate()
+        return row
+
+    def rename_animation_set(self, ident, name):
+        row = self.animation_sets[ident]
+        row.name = unique_name(name, [other.name for other in self.animation_sets_for(row.character_id) if other.id != ident])
+        row.modified_at = now_stamp()
+        return row.name
+
+    def remove_animation_set(self, ident):
+        row = self.animation_sets.pop(ident, None)
+        if row is None:
+            raise ValueError("Animation Set does not exist")
+        return row
+
+    def bind_slot(self, set_id, slot_id, animation_id=None):
+        row = self.animation_sets[set_id]
+        slot = row.slot(slot_id)
+        if slot is None:
+            raise ValueError("Animation Set slot does not exist")
+        if animation_id is not None:
+            owner = next((r for r in self.resources.values() if r.kind == "ANIMATION" and r.animation_id == animation_id), None)
+            if owner is None:
+                raise ValueError("Resource does not exist")
+            if self.groups[owner.group_id].character_id != row.character_id:
+                raise ValueError("Animation Set bindings must belong to the same Character")
+        slot.animation_id = animation_id
+        row.modified_at = now_stamp()
+        return slot
+
+    def auto_match_set(self, set_id):
+        "Bind unbound slots by semantic_type first, then by name; results are stored as animation_id."
+        row = self.animation_sets[set_id]
+        candidates = []
+        for resource in self.resources.values():
+            if resource.kind != "ANIMATION":
+                continue
+            group = self.groups[resource.group_id]
+            if group.character_id != row.character_id:
+                continue
+            candidates.append((normalize_key(resource.name), normalize_key(group.name), normalize_key(group.semantic_type), resource))
+        used = set()
+        matched = 0
+        for slot in row.slots:
+            if slot.animation_id:
+                used.add(slot.animation_id)
+        for slot in row.slots:
+            if slot.animation_id:
+                continue
+            wanted = slot.aliases
+            semantic = normalize_key(slot.semantic_type)
+            for name_key, group_key, group_semantic, resource in candidates:
+                if resource.animation_id in used:
+                    continue
+                if semantic and semantic in (group_semantic, name_key):
+                    slot.animation_id = resource.animation_id
+                    used.add(resource.animation_id)
+                    matched += 1
+                    break
+            else:
+                for name_key, group_key, group_semantic, resource in candidates:
+                    if resource.animation_id in used:
+                        continue
+                    if wanted & ({name_key, group_key} - {""}):
+                        slot.animation_id = resource.animation_id
+                        used.add(resource.animation_id)
+                        matched += 1
+                        break
+        if matched:
+            row.modified_at = now_stamp()
+        return matched
+
     def related_animations(self, source_id):
         return [row for row in self.resources.values() if row.kind == "ANIMATION" and row.source_id == source_id]
 
@@ -451,7 +561,26 @@ class ProjectLibrary:
         return [character for character in self.characters.values()
                 if character.character_reference and character.character_reference.reference_animation_id == animation_id]
 
-    def remove_animation(self, ident, clear_references=False):
+    def set_references_for_group(self, group_id):
+        "[(set, slot)] bound to Animations inside this Group subtree."
+        members = set(self.descendants(group_id))
+        owners = {r.animation_id for r in self.resources.values() if r.kind == "ANIMATION" and r.group_id in members}
+        return [(row, slot) for row in self.animation_sets.values() for slot in row.slots if slot.animation_id in owners]
+
+    def check_set_move(self, group_id, character_id, clear_sets=False):
+        "Animation Sets may never reference another Character; moving out requires an explicit clear."
+        members = set(self.descendants(group_id))
+        owners = {r.animation_id for r in self.resources.values() if r.kind == "ANIMATION" and r.group_id in members}
+        blocking = [(row, slot) for row in self.animation_sets.values() if row.character_id != character_id
+                    for slot in row.slots if slot.animation_id in owners]
+        if blocking and not clear_sets:
+            raise ValueError("Animation is used by an Animation Set")
+        for animation_id in owners:
+            if clear_sets:
+                self.clear_animation_set_references(animation_id)
+        return blocking
+
+    def remove_animation(self, ident, clear_references=False, clear_sets=False):
         "Drop one Animation record with its generated sheet, history and workspace references."
         row = self.resources.get(ident)
         if row is None:
@@ -463,6 +592,11 @@ class ProjectLibrary:
         blocking = self.reference_characters_for_animation(row.animation_id)
         if blocking and not clear_references:
             raise ValueError("Animation is the Character Reference")
+        set_users = self.set_references(row.animation_id)
+        if set_users and not clear_sets:
+            raise ValueError("Animation is used by an Animation Set")
+        if set_users:
+            self.clear_animation_set_references(row.animation_id)
         for character in blocking:
             character.character_reference = None
             character.modified_at = now_stamp()
@@ -483,7 +617,7 @@ class ProjectLibrary:
         self.refresh_status()
         return removed
 
-    def remove_resource(self, ident, cascade=False, clear_references=False):
+    def remove_resource(self, ident, cascade=False, clear_references=False, clear_sets=False):
         """Remove Project Library records only; source files and caches on disk stay untouched."""
         row = self.resources.get(ident)
         if row is None:
@@ -493,7 +627,7 @@ class ProjectLibrary:
             animations = self.related_animations(ident)
             if cascade:
                 for animation in animations:
-                    removed.extend(self.remove_animation(animation.id, clear_references))
+                    removed.extend(self.remove_animation(animation.id, clear_references, clear_sets=clear_sets))
             else:
                 for animation in animations:
                     animation.source_id = None
@@ -501,7 +635,7 @@ class ProjectLibrary:
                 removed.append(ident)
                 del self.resources[ident]
         else:
-            removed.extend(self.remove_animation(ident, clear_references))
+            removed.extend(self.remove_animation(ident, clear_references, clear_sets=clear_sets))
         self.refresh_character_groups()
         self.refresh_status()
         return removed

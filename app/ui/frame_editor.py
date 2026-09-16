@@ -578,8 +578,10 @@ class FrameEditor(QWidget):
         self.debounce.start(0 if self.timer.isActive() else 25)
 
     def _start_preview(self):
-        if self.worker or self.host.current_animation_busy or not self.provider or not len(self.provider):
-            self.pending=False
+        if self.worker or self.host.current_animation_busy:
+            return  # keep pending: _finished() reschedules once the running preview completes
+        if not self.provider or not len(self.provider):
+            self.pending=False  # nothing will ever finish for this request
             return
         if self.canvas.drag_start is not None:return
         self.pending=False

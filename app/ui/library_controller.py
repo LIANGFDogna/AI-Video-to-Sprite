@@ -10,6 +10,7 @@ from PySide6.QtCore import QObject, QTimer
 from PySide6.QtWidgets import QDialog, QInputDialog, QLineEdit
 from app.i18n import t
 from app.models.project import Project
+from app.models.animation_set import AnimationSlot
 from app.models.character_templates import REGISTRY
 from app.models.project_library import ProjectLibrary, WorkspaceState, unique_name
 from app.ui.character_dialogs import CharacterDialog
@@ -271,7 +272,14 @@ class LibraryController(QObject):
         h=self.host;lib=h.project.library
         if h.interaction_busy or group_id not in lib.groups:return
         if lib.groups[group_id].character_id==character_id:return
-        clear=False
+        clear=False;clear_sets=False
+        used=[slot for row,slot in lib.set_references_for_group(group_id) if row.character_id!=character_id]
+        if used:
+            if MessageBox.question(h,t('Move to Character'),
+                t('The Animation is used by an Animation Set. Clear the references and move it?'),
+                MessageBox.StandardButton.Yes|MessageBox.StandardButton.Cancel,
+                MessageBox.StandardButton.Cancel)!=MessageBox.StandardButton.Yes:return
+            clear_sets=True
         blocking=[character for character in lib.reference_characters_for(group_id) if character.id!=character_id]
         if blocking:
             if MessageBox.question(h,t('Character Reference'),
@@ -280,7 +288,7 @@ class LibraryController(QObject):
                 MessageBox.StandardButton.Cancel)!=MessageBox.StandardButton.Yes:return
             clear=True
         def operation(tree):
-            tree.set_group_character(group_id,character_id,clear)
+            tree.set_group_character(group_id,character_id,clear,clear_sets=clear_sets)
             tree.groups[group_id].alignment_review_required=True
             return True
         self.mutate(operation,'Move to Character')
@@ -305,6 +313,97 @@ class LibraryController(QObject):
 
     def open_character_reference(self):
         self.host.open_character_reference()
+
+    def animation_sets(self, character_id=None):
+        h=self.host;character_id=character_id or h.project.current_character_id
+        return h.project.library.animation_sets_for(character_id) if character_id else []
+
+    def select_animation_set(self, set_id):
+        "Refresh the Character panel slot list; selection is pure UI state."
+        if hasattr(self.host,'character_page'):self.host.character_page.show_set(set_id)
+        return set_id
+
+    def new_animation_set(self, name=None, semantic_type=''):
+        h=self.host;character_id=h.project.current_character_id
+        if not character_id:return None
+        if name is None:
+            name,ok=QInputDialog.getText(h,t('New Animation Set'),t('Animation Set name'),QLineEdit.EchoMode.Normal,t('New Set'))
+            if not ok:return None
+        slots=[AnimationSlot(display_name) for display_name in ('Slot 1',)]
+        row=self.mutate(lambda lib:lib.add_animation_set(character_id,name,semantic_type or 'custom',slots),'New Animation Set')
+        if row:self.select_animation_set(row.id)
+        return row
+
+    def template_animation_sets(self):
+        h=self.host;character=h.project.active_character()
+        if character is None:return []
+        registry=REGISTRY
+        if character.template_id not in registry.ids():
+            h.status.setText(t('This Character has no template to create Animation Sets from.'));return []
+        created=self.mutate(lambda lib:registry.get(character.template_id).create_animation_sets(lib,character),'Animation Sets From Template')
+        if created:self.select_animation_set(created[0].id)
+        return created
+
+    def auto_match_animation_set(self, set_id):
+        matched=self.mutate(lambda lib:lib.auto_match_set(set_id),'Auto Match Animation Set')
+        self.select_animation_set(set_id)
+        if self.host.interaction_busy:return matched
+        self.host.status.setText(t('Matched {count} slot(s).',count=matched if matched is not None else 0))
+        return matched
+
+    def slot_choices(self, set_id):
+        row=self.host.project.library.animation_sets.get(set_id)
+        return [(slot.display_name,slot.id) for slot in row.slots] if row else []
+
+    def animation_choices(self, character_id):
+        library=self.host.project.library
+        return [(resource.name,resource.animation_id) for resource in library.resources.values()
+                if resource.kind=='ANIMATION' and resource.ready and library.groups[resource.group_id].character_id==character_id]
+
+    def bind_slot_dialog(self,set_id):
+        h=self.host;row=h.project.library.animation_sets.get(set_id)
+        if row is None:return None
+        slots=self.slot_choices(set_id);animations=self.animation_choices(row.character_id)
+        if not slots or not animations:
+            h.status.setText(t('Bind at least one ready Animation first.'));return None
+        slot_label,ok=QInputDialog.getItem(h,t('Bind Animation'),t('Animation Slot'),[label for label,_ in slots],0,False)
+        if not ok:return None
+        animation_label,ok=QInputDialog.getItem(h,t('Bind Animation'),t('Animation'),[label for label,_ in animations],0,False)
+        if not ok:return None
+        return self.bind_animation_to_slot(set_id,dict(slots)[slot_label],dict(animations)[animation_label])
+
+    def clear_slot_dialog(self,set_id):
+        h=self.host;slots=self.slot_choices(set_id)
+        if not slots:return None
+        slot_label,ok=QInputDialog.getItem(h,t('Clear Binding'),t('Animation Slot'),[label for label,_ in slots],0,False)
+        if not ok:return None
+        return self.clear_animation_slot(set_id,dict(slots)[slot_label])
+
+    def bind_animation_to_slot(self,set_id,slot_id,animation_id=None):
+        result=self.mutate(lambda lib:lib.bind_slot(set_id,slot_id,animation_id),'Bind Animation')
+        self.select_animation_set(set_id)
+        return result
+
+    def clear_animation_slot(self,set_id,slot_id):
+        self.bind_animation_to_slot(set_id,slot_id,None)
+
+    def remove_animation_set(self,set_id,confirmed=False):
+        row=self.host.project.library.animation_sets.get(set_id)
+        if row is None:return None
+        if not confirmed and MessageBox.question(self.host,t('Remove Animation Set'),
+                t('Remove this Animation Set? Animations themselves are never deleted.'),
+                MessageBox.StandardButton.Yes|MessageBox.StandardButton.Cancel,
+                MessageBox.StandardButton.Cancel)!=MessageBox.StandardButton.Yes:return None
+        self.mutate(lambda lib:lib.remove_animation_set(set_id),'Remove Animation Set')
+        return set_id
+
+    def preview_animation_set(self,set_id):
+        row=self.host.project.library.animation_sets.get(set_id)
+        if row is not None:self.host.preview_animation_set(row)
+
+    def export_animation_set(self,set_id):
+        row=self.host.project.library.animation_sets.get(set_id)
+        if row is not None:self.host.export_animation_set(row)
 
     def move(self,kind,ident,target,index=None):
         if kind=='GROUP' and target is not None:
@@ -340,7 +439,13 @@ class LibraryController(QObject):
         if h.interaction_busy:return None
         row=lib.resources.get(ident)
         if row is None:return None
-        clear=False
+        clear=False;clear_sets=False
+        if row.kind=='ANIMATION' and lib.set_references(row.animation_id):
+            if not confirmed and MessageBox.question(h,t('Remove Resource'),
+                    t('The Animation is used by an Animation Set. Clear the references and remove it?'),
+                    MessageBox.StandardButton.Yes|MessageBox.StandardButton.Cancel,
+                    MessageBox.StandardButton.Cancel)!=MessageBox.StandardButton.Yes:return None
+            clear_sets=True
         if row.kind=='ANIMATION' and lib.reference_characters_for_animation(row.animation_id):
             if not confirmed and MessageBox.question(h,t('Remove Resource'),
                     t('The animation is the current Character Reference. Clear the Character Reference and remove it?'),
@@ -371,7 +476,7 @@ class LibraryController(QObject):
         purged=set()
         if row.kind=='ANIMATION':purged.add(row.animation_id)
         elif row.kind in SOURCE_KINDS and cascade:purged.update(animation.animation_id for animation in lib.related_animations(ident))
-        removed=self.mutate(lambda tree:tree.remove_resource(ident,cascade=cascade,clear_references=clear),'Remove Resource')
+        removed=self.mutate(lambda tree:tree.remove_resource(ident,cascade=cascade,clear_references=clear,clear_sets=clear_sets),'Remove Resource')
         if not removed:return None
         # The project keeps one snapshot per Animation; drop them so ensure_library() cannot revive deleted records.
         for animation_id in purged:

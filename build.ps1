@@ -226,7 +226,25 @@ if ($spriteFrameVerify.ExitCode -ne 0) { throw "Packaged frame alignment restart
 $spriteFrameReport = Get-Content -LiteralPath (Join-Path $spriteFrameDirectory 'validation.json') -Raw | ConvertFrom-Json
 if ($spriteFrameReport.status -ne 'passed' -or -not $spriteFrameReport.restart_verified -or -not $spriteFrameReport.ghost_not_in_export) { throw 'Missing frame alignment acceptance result.' }
 
+$spriteSetDirectory = Join-Path $PSScriptRoot ('build\set-smoke-' + [Guid]::NewGuid().ToString('N'))
+$spriteSetSmoke = Start-Process -FilePath $spriteExecutable -ArgumentList @('--smoke-animation-sets', ('"' + $spriteSetDirectory + '"')) -WindowStyle Hidden -PassThru
+if (-not $spriteSetSmoke.WaitForExit(300000)) {
+    $spriteSetSmoke.Kill()
+    throw 'Packaged Animation Set preview / export timed out.'
+}
+$spriteSetSmoke.Refresh()
+if ($spriteSetSmoke.ExitCode -ne 0) { throw "Packaged Animation Set failed ($($spriteSetSmoke.ExitCode)). Check logs/app.log." }
+$spriteSetVerify = Start-Process -FilePath $spriteExecutable -ArgumentList @('--smoke-animation-sets', ('"' + $spriteSetDirectory + '"'), '--verify-animation-sets') -WindowStyle Hidden -PassThru
+if (-not $spriteSetVerify.WaitForExit(200000)) {
+    $spriteSetVerify.Kill()
+    throw 'Packaged Animation Set restart verification timed out.'
+}
+$spriteSetVerify.Refresh()
+if ($spriteSetVerify.ExitCode -ne 0) { throw "Packaged Animation Set restart verification failed ($($spriteSetVerify.ExitCode)). Check logs/app.log." }
+$spriteSetReport = Get-Content -LiteralPath (Join-Path $spriteSetDirectory 'validation.json') -Raw | ConvertFrom-Json
+if ($spriteSetReport.status -ne 'passed' -or -not $spriteSetReport.restart_verified -or -not $spriteSetReport.jump_ready) { throw 'Missing Animation Set acceptance result.' }
+
 $spritePathReports = & (Join-Path $PSScriptRoot 'scripts\verify_path_ui.ps1') -Executable $spriteExecutable
-$spriteReceipt = @{ status = 'passed'; build_version = '20260916-frame-alignment-reference-ghost'; path_validation = $spritePathReports; reference_validation = $spriteReferenceReports; group_validation = $spriteGroupReport; character_validation = $spriteCharacterReport; frame_validation = $spriteFrameReport; editor_validation = $spriteEditorReport; executable_sha256 = (Get-FileHash -LiteralPath $spriteExecutable -Algorithm SHA256).Hash; verified_at = (Get-Date).ToString('o') }
+$spriteReceipt = @{ status = 'passed'; build_version = '20260916-animation-sets'; path_validation = $spritePathReports; reference_validation = $spriteReferenceReports; group_validation = $spriteGroupReport; character_validation = $spriteCharacterReport; frame_validation = $spriteFrameReport; set_validation = $spriteSetReport; editor_validation = $spriteEditorReport; executable_sha256 = (Get-FileHash -LiteralPath $spriteExecutable -Algorithm SHA256).Hash; verified_at = (Get-Date).ToString('o') }
 $spriteReceipt | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $spriteReleaseDirectory 'release-validation.json') -Encoding UTF8
 Write-Host "Built $spriteExecutable. Video input uses FFmpeg; frame sequence input does not. All release checks passed."

@@ -152,6 +152,7 @@ def start_reference_smoke(app,window,output):
                 window.open_editor();advance('run_editor')
             elif phase=='run_editor':
                 if not editor_ready():return
+                if e.canvas.character_reference is None:return  # wait for the first preview result of this Animation
                 assert p.layout.width==512 and p.layout.normalize_scale==(1/3,1/3)
                 assert e.canvas.character_reference==state['reference']
                 state['run_ghost']=e.canvas.ghost_pixels

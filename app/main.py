@@ -34,9 +34,13 @@ def main() -> int:
     parser.add_argument("--verify-characters",action="store_true",help="Verify saved Characters in a fresh process")
     parser.add_argument("--smoke-frame-alignment",type=Path,help="Validate per-frame correction, character Ghost and drag stability")
     parser.add_argument("--verify-frame-alignment",action="store_true",help="Verify saved frame alignment in a fresh process")
+    parser.add_argument("--smoke-animation-sets",type=Path,help="Validate Animation Sets, sequence preview, protection and export")
+    parser.add_argument("--verify-animation-sets",action="store_true",help="Verify saved Animation Sets in a fresh process")
     args = parser.parse_args()
     import os,tempfile,uuid
-    if args.smoke_frame_alignment:
+    if args.smoke_animation_sets:
+        os.environ["AIVSPRITE_SETTINGS"]=str(args.smoke_animation_sets.resolve()/"machine-settings.json")
+    elif args.smoke_frame_alignment:
         os.environ["AIVSPRITE_SETTINGS"]=str(args.smoke_frame_alignment.resolve()/"machine-settings.json")
     elif args.smoke_characters:
         os.environ["AIVSPRITE_SETTINGS"]=str(args.smoke_characters.resolve()/"machine-settings.json")
@@ -60,7 +64,10 @@ def main() -> int:
     sys.excepthook = exception_hook
     window = MainWindow(log_path)
     window.show()
-    if args.smoke_frame_alignment:
+    if args.smoke_animation_sets:
+        from app.animation_set_smoke import start_animation_set_smoke
+        start_animation_set_smoke(app,window,args.smoke_animation_sets,args.verify_animation_sets)
+    elif args.smoke_frame_alignment:
         from app.frame_alignment_smoke import start_frame_alignment_smoke
         start_frame_alignment_smoke(app,window,args.smoke_frame_alignment,args.verify_frame_alignment)
     elif args.smoke_characters:
