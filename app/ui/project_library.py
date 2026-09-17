@@ -1,11 +1,12 @@
 """Persistent project hierarchy and the single media Add entry point."""
 import json
-from PySide6.QtCore import Qt, QMimeData
-from PySide6.QtGui import QDrag, QColor
+from PySide6.QtCore import Qt, QMimeData, QTimer
+from PySide6.QtGui import QDrag, QColor, QPainter, QPen, QBrush
 from PySide6.QtWidgets import (QWidget,QVBoxLayout,QHBoxLayout,QLineEdit,QLabel,QPushButton,
     QTreeWidget,QTreeWidgetItem,QMenu,QAbstractItemView,QInputDialog,QStyle)
 from app.i18n import t
 from app.ui.character_panel import character_label
+from app.ui.editor_timeline import FRAME_MIME
 
 ROLE=Qt.ItemDataRole.UserRole
 MIME='application/x-aivsprite-library'
@@ -30,7 +31,11 @@ def reorder_index(lib,kind,dragged_id,container,index):
 class LibraryTree(QTreeWidget):
     def __init__(self,panel):
         super().__init__(panel);self.panel=panel
+        self.frame_drop_target=None
+        self.drop_zone=None
         self.setColumnCount(2);self.setHeaderLabels([t('Project Library'),t('Animations')])
+        # One custom indicator: Qt's own On/Above/Below position is unreliable on nested rows.
+        self.setDropIndicatorShown(False)
         self.setColumnWidth(0,225);self.setColumnWidth(1,75)
         self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.setDragEnabled(True);self.setAcceptDrops(True);self.setDropIndicatorShown(True)
@@ -48,20 +53,111 @@ class LibraryTree(QTreeWidget):
         mime=QMimeData();mime.setData(MIME,json.dumps([kind,ident]).encode())
         drag=QDrag(self);drag.setMimeData(mime);drag.exec(Qt.DropAction.MoveAction)
 
+    def drop_target(self,point):
+        "One Group row has three drop zones: above, on (nest) and below."
+        item=self.itemAt(point)
+        if item is None:return ('PROJECT',None,'on')
+        kind,ident=item.data(0,ROLE)
+        zone='on'
+        if kind=='GROUP':
+            rect=self.visualItemRect(item);margin=max(3,rect.height()//4)
+            if point.y()<rect.top()+margin:zone='above'
+            elif point.y()>rect.bottom()-margin:zone='below'
+        return (kind,ident,zone)
+
+    def can_drop(self,dragged_kind,dragged_id,kind,ident,zone):
+        "Cycle protection lives here and in the model; both must agree."
+        lib=self.panel.host.project.library
+        if dragged_kind=='GROUP':
+            if kind=='CHARACTER':return True
+            if kind in ('LOOSE','CHARACTERS'):return True
+            if kind=='GROUP':
+                parent=ident if zone=='on' else lib.groups[ident].parent_id
+                return lib.can_reparent(dragged_id,parent)
+            return kind=='PROJECT'
+        if kind=='PROJECT':return False
+        return True
+
     def dragEnterEvent(self,event):
-        if not self.panel.host.interaction_busy and (event.mimeData().hasFormat(MIME) or event.mimeData().hasUrls()):event.acceptProposedAction()
+        if not self.panel.host.interaction_busy and (event.mimeData().hasFormat(MIME) or event.mimeData().hasFormat(FRAME_MIME) or event.mimeData().hasUrls()):event.acceptProposedAction()
         else:event.ignore()
 
     def dragMoveEvent(self,event):
-        item=self.itemAt(event.position().toPoint());data=item.data(0,ROLE) if item else ('PROJECT',None)
-        if not self.panel.host.interaction_busy and (event.mimeData().hasFormat(MIME) or event.mimeData().hasUrls() and data[0]=='GROUP'):
-            super().dragMoveEvent(event);event.acceptProposedAction()
+        kind,ident,zone=self.drop_target(event.position().toPoint())
+        if event.mimeData().hasFormat(FRAME_MIME):
+            # Frame drags only highlight a Group row; no pixmap preview is ever shown.
+            target=ident if kind=='GROUP' else None
+            self._set_frame_target(target)
+            self._set_drop_zone(None)
+            if target is not None and not self.panel.host.interaction_busy:event.acceptProposedAction()
+            else:event.ignore()
+            return
+        self._set_frame_target(None)
+        allowed=False
+        if not self.panel.host.interaction_busy:
+            if event.mimeData().hasFormat(MIME):
+                dragged_kind,dragged_id=json.loads(bytes(event.mimeData().data(MIME)))
+                allowed=self.can_drop(dragged_kind,dragged_id,kind,ident,zone)
+            elif event.mimeData().hasUrls():
+                allowed=kind=='GROUP'
+        self._set_drop_zone((kind,ident,zone) if allowed else None)
+        if allowed:event.acceptProposedAction()
         else:event.ignore()
+
+    def dragLeaveEvent(self,event):
+        self._set_frame_target(None)
+        self._set_drop_zone(None)
+        super().dragLeaveEvent(event)
+
+    def _set_frame_target(self,ident):
+        if ident==self.frame_drop_target:return
+        self.frame_drop_target=ident
+        self.viewport().update()
+
+    def _set_drop_zone(self,value):
+        if value==self.drop_zone:return
+        self.drop_zone=value
+        self.viewport().update()
+
+    def paintEvent(self,event):
+        super().paintEvent(event)
+        painter=None
+        if self.frame_drop_target is not None:
+            item=self.panel.items.get(('GROUP',self.frame_drop_target))
+            if item is not None:
+                painter=QPainter(self.viewport())
+                painter.setPen(QPen(QColor('#8fd3ff'),2))
+                painter.setBrush(QBrush(QColor(143,211,255,40)))
+                painter.drawRect(self.visualItemRect(item).adjusted(1,1,-1,-1))
+        if self.drop_zone is not None:
+            kind,ident,zone=self.drop_zone
+            item=self.panel.items.get((kind,ident))
+            if item is not None:
+                rect=self.visualItemRect(item)
+                if painter is None:painter=QPainter(self.viewport())
+                painter.setPen(QPen(QColor('#65dbbb'),2))
+                painter.setBrush(QBrush(QColor(101,219,187,40)))
+                if zone=='above':painter.drawLine(rect.topLeft(),rect.topRight())
+                elif zone=='below':painter.drawLine(rect.bottomLeft(),rect.bottomRight())
+                else:painter.drawRect(rect.adjusted(1,1,-1,-1))
+        if painter is not None:painter.end()
 
     def dropEvent(self,event):
         if self.panel.host.interaction_busy:event.ignore();return
-        item=self.itemAt(event.position().toPoint());kind,ident=item.data(0,ROLE) if item else ('PROJECT',None)
+        point=event.position().toPoint()
+        kind,ident,zone=self.drop_target(point)
         control=self.panel.controller
+        self._set_frame_target(None)
+        self._set_drop_zone(None)
+        if event.mimeData().hasFormat(FRAME_MIME):
+            if kind!='GROUP':
+                event.ignore();self.panel.host.status.setText(t('Drop frames onto a Group.'));return
+            payload=json.loads(bytes(event.mimeData().data(FRAME_MIME)))
+            source=payload.get('animation_id');frames=payload.get('frames') or []
+            # Building the snapshot rebuilds the tree: never do that inside Qt's drop event.
+            QTimer.singleShot(0,lambda:control.drop_frames_to_group(source,frames,ident))
+            event.acceptProposedAction()
+            return
         if event.mimeData().hasUrls():
             if kind!='GROUP':event.ignore();self.panel.host.status.setText(t('Drop media onto a Group, not the Project Root.'));return
             paths=[u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
@@ -70,23 +166,21 @@ class LibraryTree(QTreeWidget):
         if not event.mimeData().hasFormat(MIME):event.ignore();return
         dragged_kind,dragged_id=json.loads(bytes(event.mimeData().data(MIME)))
         lib=self.panel.host.project.library;index=None
-        position=self.dropIndicatorPosition()
-        adjacent=position in (QAbstractItemView.DropIndicatorPosition.AboveItem,QAbstractItemView.DropIndicatorPosition.BelowItem)
+        if not self.can_drop(dragged_kind,dragged_id,kind,ident,zone):event.ignore();return
+        adjacent=zone in ('above','below')
         if dragged_kind=='GROUP':
             if kind=='CHARACTER':
-                control.move_to_character(dragged_id,ident);event.acceptProposedAction();return
+                control.drop_group_on_character(dragged_id,ident);event.acceptProposedAction();return
             if kind in ('LOOSE','CHARACTERS'):
-                control.move_to_character(dragged_id,None);event.acceptProposedAction();return
+                control.drop_group_on_character(dragged_id,None);event.acceptProposedAction();return
             if kind=='GROUP' and adjacent:
                 target=lib.groups[ident].parent_id
-                siblings=lib.ordered_children(target,lib.groups[ident].character_id);index=next(i for i,g in enumerate(siblings) if g.id==ident)+(position==QAbstractItemView.DropIndicatorPosition.BelowItem)
-            elif kind in ('PROJECT','GROUP'):target=ident if kind=='GROUP' else None
-            else:event.ignore();return
+                siblings=lib.ordered_children(target,lib.groups[ident].character_id);index=next(i for i,g in enumerate(siblings) if g.id==ident)+(zone=='below')
+            else:target=ident if kind=='GROUP' else None
         else:
-            if kind=='PROJECT':event.ignore();return
             target=ident if kind=='GROUP' else lib.resources[ident].group_id
             if kind=='RESOURCE' and adjacent:
-                rows=lib.in_group(target);index=next(i for i,r in enumerate(rows) if r.id==ident)+(position==QAbstractItemView.DropIndicatorPosition.BelowItem)
+                rows=lib.in_group(target);index=next(i for i,r in enumerate(rows) if r.id==ident)+(zone=='below')
         index=reorder_index(lib,dragged_kind,dragged_id,target,index)
         control.move(dragged_kind,dragged_id,target,index);event.acceptProposedAction()
 

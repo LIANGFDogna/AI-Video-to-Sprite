@@ -1,6 +1,8 @@
 import numpy as np
 from PySide6.QtCore import Qt, Signal, QPointF, QRectF
 from PySide6.QtGui import QColor, QPen, QImage, QPixmap
+from PySide6.QtWidgets import QGraphicsItem, QGraphicsView
+from app.models.pixel_edit import DEFAULT_BRUSH_SIZE
 from app.ui.video_viewer import VideoViewer
 
 
@@ -18,13 +20,26 @@ def screen_delta_to_canvas_delta(screen_delta, view_scale=1.0, display_scale=1.0
 class EditorCanvas(VideoViewer):
     moved = Signal(float, float)
     interaction_cancelled = Signal()
+    stroke_started = Signal(float, float)
+    stroke_moved = Signal(float, float)
+    stroke_finished = Signal()
+    stroke_cancelled = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.overlays.update(axes=True, safe=True)
         self.idle_ghost_item=self.scene().addPixmap(QPixmap());self.idle_ghost_item.setZValue(-1)
         self.idle_ghost_item.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+        self.idle_ghost_item.setCacheMode(QGraphicsItem.CacheMode.NoCache)
+        # Frame Reference Overlay: above the Character Ghost, below the editable frame.
+        self.frame_reference_item=self.scene().addPixmap(QPixmap());self.frame_reference_item.setZValue(-.5)
+        self.frame_reference_item.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+        self.frame_reference_item.setCacheMode(QGraphicsItem.CacheMode.NoCache)
+        self.pixmap_item.setCacheMode(QGraphicsItem.CacheMode.NoCache)
+        # A moving item must clear its whole old rect; minimal updates leave trails.
+        self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.BoundingRectViewportUpdate)
         self.ghost_pixels=None
+        self.reference_pixels=None
         self.origin = None
         self.drag_start = None
         self.pan_start = None
@@ -32,6 +47,10 @@ class EditorCanvas(VideoViewer):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setDragMode(self.DragMode.NoDrag)
         self.dragging = False
+        self.tool = 'move'
+        self.stroke_active = False
+        self.brush_size = DEFAULT_BRUSH_SIZE
+        self.hover_point = None
 
     def set_idle_ghost(self,pixels,opacity=.35):
         if pixels is not self.ghost_pixels:
@@ -42,10 +61,42 @@ class EditorCanvas(VideoViewer):
                 self.idle_ghost_item.setPixmap(QPixmap.fromImage(QImage(data.data,w,h,data.strides[0],QImage.Format.Format_RGBA8888).copy()))
         self.idle_ghost_item.setOpacity(opacity)
         self.idle_ghost_item.setPos(0,0)
+        self.idle_ghost_item.setVisible(pixels is not None and opacity > 0)
+
+    def set_frame_reference(self,pixels,opacity=.15,visible=True):
+        "Editor-only overlay; it is never part of the final pixels."
+        if pixels is not self.reference_pixels:
+            self.reference_pixels=pixels
+            if pixels is None:self.frame_reference_item.setPixmap(QPixmap())
+            else:
+                data=np.ascontiguousarray(pixels);h,w=data.shape[:2]
+                self.frame_reference_item.setPixmap(QPixmap.fromImage(QImage(data.data,w,h,data.strides[0],QImage.Format.Format_RGBA8888).copy()))
+        self.frame_reference_item.setOpacity(opacity)
+        self.frame_reference_item.setPos(0,0)
+        self.frame_reference_item.setVisible(pixels is not None and visible and opacity > 0)
+
+    def set_tool(self,tool):
+        "One canvas, three tools: Select / Move, Pencil and Eraser."
+        self.tool = tool if tool in ('move','pencil','eraser') else 'move'
+        self.hover_point = None
+        self.viewport().setCursor(Qt.CursorShape.CrossCursor if self.tool != 'move' else Qt.CursorShape.OpenHandCursor)
+        self.viewport().update()
+
+    def image_point(self,position):
+        "Screen position -> image pixel; Qt already applied zoom, fit and screen DPI."
+        point = self.mapToScene(position.toPoint())
+        scale = self.display_scale or 1.
+        return (point.x()/scale, point.y()/scale)
+
+    def _repaint_item(self,previous):
+        self.scene().invalidate(previous)
+        self.scene().invalidate(self.pixmap_item.sceneBoundingRect())
+        self.viewport().update()
 
     def clear_image(self):
         super().clear_image()
         self.set_idle_ghost(None)
+        self.set_frame_reference(None,0,False)
 
     def set_image(self, rgba, display_scale=1.):
         self.pixmap_item.setPos(0, 0)
@@ -53,21 +104,37 @@ class EditorCanvas(VideoViewer):
 
     def cancel_active_interaction(self):
         "Drop every transient drag state; the single pixmap item snaps back to the origin."
-        changed = self.drag_start is not None or self.pan_start is not None or self.dragging
+        changed = self.drag_start is not None or self.pan_start is not None or self.dragging or self.stroke_active
         self.drag_start = None
         self.pan_start = None
         self.dragging = False
-        self.pixmap_item.setPos(0, 0)
+        try:
+            self.pixmap_item.setPos(0, 0)
+        except RuntimeError:
+            return False  # Qt may already have deleted the scene items during shutdown.
+        self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.BoundingRectViewportUpdate)
+        if self.stroke_active:
+            self.stroke_active = False
+            self.stroke_cancelled.emit()
         if changed:
+            self.scene().invalidate(self.scene().sceneRect())
             self.viewport().update()
             self.interaction_cancelled.emit()
         return changed
 
     def mousePressEvent(self, event):
         self.setFocus()
+        if event.button() == Qt.MouseButton.LeftButton and self.tool in ('pencil','eraser'):
+            self.stroke_active = True
+            x, y = self.image_point(event.position())
+            self.stroke_started.emit(x, y)
+            event.accept()
+            return
         if event.button() == Qt.MouseButton.LeftButton:
             self.drag_start = self.mapToScene(event.position().toPoint())
             self.dragging = True
+            # While an item is being dragged the whole viewport is repainted.
+            self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
             event.accept()
         elif event.button() == Qt.MouseButton.MiddleButton:
             self.pan_start = event.position()
@@ -75,23 +142,43 @@ class EditorCanvas(VideoViewer):
             super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        if self.stroke_active:
+            x, y = self.image_point(event.position())
+            self.hover_point = self.mapToScene(event.position().toPoint())
+            self.stroke_moved.emit(x, y)
+            event.accept()
+            return
         if self.drag_start is not None:
             delta = self.mapToScene(event.position().toPoint())-self.drag_start
+            previous = self.pixmap_item.sceneBoundingRect()
             self.pixmap_item.setPos(delta)
+            self._repaint_item(previous)
             event.accept()
         elif self.pan_start is not None:
             delta = event.position()-self.pan_start
             self.horizontalScrollBar().setValue(self.horizontalScrollBar().value()-round(delta.x()))
             self.verticalScrollBar().setValue(self.verticalScrollBar().value()-round(delta.y()))
             self.pan_start = event.position()
-        else: super().mouseMoveEvent(event)
+        else:
+            if self.tool in ('pencil','eraser'):
+                self.hover_point = self.mapToScene(event.position().toPoint())
+                self.viewport().update()
+            super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        if self.stroke_active and event.button() == Qt.MouseButton.LeftButton:
+            self.stroke_active = False
+            self.stroke_finished.emit()
+            event.accept()
+            return
         if self.drag_start is not None:
             delta = self.mapToScene(event.position().toPoint())-self.drag_start
             self.drag_start = None
             self.dragging = False
+            previous = self.pixmap_item.sceneBoundingRect()
             self.pixmap_item.setPos(0, 0)
+            self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.BoundingRectViewportUpdate)
+            self._repaint_item(previous)
             if delta.manhattanLength() > 1:
                 dx, dy = screen_delta_to_canvas_delta((delta.x(), delta.y()), display_scale=self.display_scale)
                 self.moved.emit(round(dx), round(dy))
@@ -132,3 +219,7 @@ class EditorCanvas(VideoViewer):
             pen.setStyle(Qt.PenStyle.DashLine)
             painter.setPen(pen)
             painter.drawRect(QRectF(w*.05,h*.05,w*.9,h*.9))
+        if self.tool in ('pencil','eraser') and self.hover_point is not None:
+            radius = max(1., self.brush_size/2.)*self.display_scale
+            painter.setPen(self.pen('#ffffff' if self.tool=='pencil' else '#ff9d9d', 1))
+            painter.drawEllipse(self.hover_point, radius, radius)

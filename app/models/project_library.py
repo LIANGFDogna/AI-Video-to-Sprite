@@ -7,6 +7,7 @@ import math
 from app.models.animation_set import AnimationSet, AnimationSlot, normalize_key
 from app.models.character_reference import CharacterReference
 from app.models.state_machine import Condition, State, StateMachine, StateParameter, Transition
+from app.models.pixel_edit import DEFAULT_REFERENCE_OPACITY, MAX_REFERENCE_OPACITY
 
 SOURCE_KINDS = {"SOURCE_VIDEO", "SOURCE_SEQUENCE", "SOURCE_SPRITE_SHEET"}
 RESOURCE_KINDS = SOURCE_KINDS | {"ANIMATION", "GENERATED_SPRITE_SHEET"}
@@ -49,6 +50,9 @@ class WorkspaceState:
     selected_frames: list[str] = field(default_factory=list)
     reference_ghost: bool | None = None
     reference_ghost_opacity: float = .15
+    frame_reference: dict | None = None
+    frame_reference_visible: bool = True
+    frame_reference_opacity: float = DEFAULT_REFERENCE_OPACITY
 
     @classmethod
     def from_dict(cls, data):
@@ -60,6 +64,13 @@ class WorkspaceState:
         if result.frame < 0 or result.source_frame < 0 or result.page not in range(5) or result.editor_tab not in (0, 1):
             raise ValueError("Invalid Group workspace state")
         if result.reference_ghost not in (None, True, False) or not 0 <= result.reference_ghost_opacity <= .7:
+            raise ValueError("Invalid Group workspace state")
+        reference = result.frame_reference
+        if reference is not None and (not isinstance(reference, dict) or set(reference) != {"animation_id", "frame_index"}
+                or len(str(reference["animation_id"])) != 32 or not isinstance(reference["frame_index"], int)
+                or reference["frame_index"] < 0):
+            raise ValueError("Invalid Group workspace state")
+        if result.frame_reference_visible not in (True, False) or not 0 <= result.frame_reference_opacity <= MAX_REFERENCE_OPACITY:
             raise ValueError("Invalid Group workspace state")
         return result
 
@@ -262,6 +273,22 @@ class ProjectLibrary:
 
     def children(self, parent_id=None):
         return sorted((g for g in self.groups.values() if g.parent_id == parent_id), key=lambda g: (g.order, g.id))
+
+    def can_reparent(self, ident, parent_id):
+        "Drop zones and validate() share one cycle rule: never drop into your own subtree."
+        if ident not in self.groups or (parent_id is not None and parent_id not in self.groups):
+            return False
+        return parent_id not in self.descendants(ident)
+
+    def frame_reference(self, animation_id):
+        "The Animation's edit reference, or None; Character Reference is a different feature."
+        if not animation_id:
+            return None
+        for group in self.groups.values():
+            state = group.animation_states.get(animation_id)
+            if state is not None and state.frame_reference:
+                return dict(state.frame_reference)
+        return None
 
     def path(self, group_id):
         result, seen = [], set()
@@ -745,6 +772,32 @@ class ProjectLibrary:
         self.refresh_character_groups()
         self.refresh_status()
         return removed
+
+    def group_contents(self, ident):
+        "What a destructive Group delete would remove; library records only, never disk files."
+        members = self.descendants(ident, include_self=False)
+        inside = {ident, *members}
+        rows = [r for r in self.resources.values() if r.group_id in inside]
+        return {"groups": len(members), "resources": sum(1 for r in rows if r.kind != "GENERATED_SPRITE_SHEET"),
+                "animations": sum(1 for r in rows if r.kind == "ANIMATION")}
+
+    def remove_group_tree(self, ident, clear_references=False, clear_sets=False, clear_machines=False):
+        "Delete a Group with every child Group and library record; source files stay untouched."
+        if ident not in self.groups:
+            raise ValueError("Group does not exist")
+        members = self.descendants(ident)
+        depth = {member: len(self.path(member)) for member in members}
+        for member in sorted(members, key=lambda value: depth[value], reverse=True):
+            for resource in list(self.in_group(member)):
+                if resource.kind == "GENERATED_SPRITE_SHEET" or resource.id not in self.resources:
+                    continue
+                self.remove_resource(resource.id, cascade=False, clear_references=clear_references,
+                                     clear_sets=clear_sets, clear_machines=clear_machines)
+        for member in sorted(members, key=lambda value: depth[value], reverse=True):
+            self.groups.pop(member, None)
+        self.refresh_character_groups()
+        self.refresh_status()
+        return members
 
     def remove_group(self, ident, move_to_parent=False):
         group = self.groups[ident]

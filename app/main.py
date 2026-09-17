@@ -36,11 +36,15 @@ def main() -> int:
     parser.add_argument("--verify-frame-alignment",action="store_true",help="Verify saved frame alignment in a fresh process")
     parser.add_argument("--smoke-animation-sets",type=Path,help="Validate Animation Sets, sequence preview, protection and export")
     parser.add_argument("--verify-animation-sets",action="store_true",help="Verify saved Animation Sets in a fresh process")
+    parser.add_argument("--smoke-pixel-tools",type=Path,help="Validate Group drop zones, pixel tools, derived frames and reference overlays")
+    parser.add_argument("--verify-pixel-tools",action="store_true",help="Verify saved pixel edits and derived frames in a fresh process")
     parser.add_argument("--smoke-state-machine",type=Path,help="Validate Character State Machines, simulator, protection and export")
     parser.add_argument("--verify-state-machine",action="store_true",help="Verify saved State Machines in a fresh process")
     args = parser.parse_args()
     import os,tempfile,uuid
-    if args.smoke_state_machine:
+    if args.smoke_pixel_tools:
+        os.environ["AIVSPRITE_SETTINGS"]=str(args.smoke_pixel_tools.resolve()/"pixel-settings.json")
+    elif args.smoke_state_machine:
         os.environ["AIVSPRITE_SETTINGS"]=str(args.smoke_state_machine.resolve()/"machine-settings.json")
     elif args.smoke_animation_sets:
         os.environ["AIVSPRITE_SETTINGS"]=str(args.smoke_animation_sets.resolve()/"machine-settings.json")
@@ -68,7 +72,10 @@ def main() -> int:
     sys.excepthook = exception_hook
     window = MainWindow(log_path)
     window.show()
-    if args.smoke_state_machine:
+    if args.smoke_pixel_tools:
+        from app.pixel_tools_smoke import start_pixel_tools_smoke
+        start_pixel_tools_smoke(app,window,args.smoke_pixel_tools,args.verify_pixel_tools)
+    elif args.smoke_state_machine:
         from app.state_machine_smoke import start_state_machine_smoke
         start_state_machine_smoke(app,window,args.smoke_state_machine,args.verify_state_machine)
     elif args.smoke_animation_sets:

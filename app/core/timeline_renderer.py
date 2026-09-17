@@ -9,6 +9,7 @@ from app.models.frame_data import FrameData
 from app.models.timeline_edit import FrameOverride, TimelineFrame
 from app.core.animation_transform import apply_animation_transform
 from app.core.frame_correction import apply_frame_correction
+from app.core.pixel_edit import composite_edit, load_erase, load_paint
 
 
 def compile_timeline(edit):
@@ -77,6 +78,17 @@ def transform_layer(image, override):
     return out
 
 
+def apply_project_raster_edit(project, image, frame_index):
+    "Pencil / Eraser sit between the aligned frame and the Animation Transform."
+    animation_id = getattr(project, "animation_id", None)
+    row = project.raster_edit(animation_id, frame_index) if animation_id else None
+    if row is None or not row.active:
+        return image
+    paint = load_paint(row.paint_layer, image.shape) if row.paint_layer else None
+    erase = load_erase(row.erase_mask, image.shape) if row.erase_mask else None
+    return composite_edit(image, paint, erase)
+
+
 def render_timeline_frame(project, timing, read_base, index=0, read_keyed=None):
     clips = {f.id: f for f in project.timeline_edit.timeline_clips} if project.timeline_edit.enabled else {f'source:{timing["source_index"]}':TimelineFrame(timing['source_index'],timing['start'],timing['duration'])}
     layers, warnings = [], []
@@ -86,6 +98,7 @@ def render_timeline_frame(project, timing, read_base, index=0, read_keyed=None):
         clip = clips[ident]
         value = project.timeline_edit.frame_overrides.get(ident, FrameOverride())
         image = read_base(clip.source_index)
+        image = apply_project_raster_edit(project, image, clip.source_index)
         base = project.tracking_results[clip.source_index]
         image,base=apply_animation_transform(project,image,base,read_keyed)
         warnings.extend(base.warnings)

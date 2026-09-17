@@ -349,7 +349,8 @@ class MainWindow(QMainWindow):
         p = asdict(self.project)
         keys = ('timeline_edit','root_keyframes','motion_settings','tracking_settings','alignment_mode','sprite_cell',
                 'scale','character_profile','processing_mode','full_processing_canvas_mode','passthrough_alignment',
-                'chroma_key_settings','sequence_fps','export_settings','character_reference','animation_transform','frame_corrections')
+                'chroma_key_settings','sequence_fps','export_settings','character_reference','animation_transform','frame_corrections',
+                'pixel_edits')
         return {k:p[k] for k in keys}
 
     def add_frame_correction(self,indices,dx,dy):
@@ -370,6 +371,28 @@ class MainWindow(QMainWindow):
         if before==self._edit_snapshot():return
         self._history().record(before,self._edit_snapshot(),'Reset Frame Correction')
         self.dirty=True;self.built=False;self._invalidate_reviews();self._refresh_editor();self._update_state()
+
+    def apply_pixel_stroke(self,animation_id,frame_index,paint_layer,erase_mask,revision,label='Pencil Stroke'):
+        "One Pencil / Eraser stroke is exactly one undo command; revisions stay immutable."
+        p=self.project
+        before=self._edit_snapshot()
+        p.set_raster_edit(animation_id,frame_index,paint_layer,erase_mask,revision)
+        after=self._edit_snapshot()
+        if before==after:return None
+        self._history().record(before,after,label)
+        self.dirty,self.built=True,False
+        self._prune_pixel_edits()
+        self._invalidate_reviews();self._refresh_editor();self._update_state()
+        return p.raster_edit(animation_id,frame_index)
+
+    def _prune_pixel_edits(self):
+        "Superseded revisions stay on disk until no undo / redo entry can reach them."
+        from app.utils.paths import project_cache_root
+        from app.core.pixel_edit import prune_revisions, referenced_layers
+        keep=referenced_layers(asdict(self.project))
+        for entry in getattr(self._history(),'entries',[]):
+            keep|=referenced_layers(entry[0],entry[1])
+        prune_revisions(project_cache_root(self.project.project_id,self.project_file)/'pixel_edits',keep)
 
     def _cancel_editor_interaction(self):
         if hasattr(self,'editor'):self.editor.cancel_active_interaction()

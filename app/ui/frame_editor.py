@@ -4,10 +4,11 @@ from dataclasses import asdict
 from bisect import bisect_right
 import numpy as np
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtGui import QColor, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QPushButton,
     QSplitter, QStackedWidget, QTabWidget, QScrollArea, QListWidget, QTreeWidget, QTreeWidgetItem,
-    QComboBox, QDoubleSpinBox, QSpinBox, QCheckBox, QGroupBox, QRadioButton, QGridLayout, QHeaderView)
+    QComboBox, QDoubleSpinBox, QSpinBox, QCheckBox, QGroupBox, QRadioButton, QGridLayout, QHeaderView,
+    QColorDialog, QMenu)
 from app.i18n import t, translate_error
 from app.models.timeline_edit import FrameOverride, TimelineFrame
 from app.core.final_frame_provider import FinalFrameProvider
@@ -18,7 +19,10 @@ from app.ui.editor_canvas import EditorCanvas
 from app.ui.editor_timeline import EditorTimeline
 from app.ui.curve_editor import CurveEditor
 from app.ui.worker import Worker
-from app.utils.paths import frame_path
+from app.utils.paths import frame_path, pixel_edit_directory
+from app.models.pixel_edit import DEFAULT_BRUSH_SIZE, MAX_BRUSH_SIZE, MIN_BRUSH_SIZE
+from app.core.pixel_edit import (RasterStroke, canvas_layers, canvas_to_frame, composite_edit, frame_chain,
+    load_erase, load_paint, write_revision)
 
 
 class _PositionScope:
@@ -70,6 +74,22 @@ class FrameEditor(QWidget):
         self.mode_note = QLabel()
         top.addWidget(self.mode_note, 1)
         layout.addLayout(top)
+        tools_row = QHBoxLayout()
+        self.tool_buttons = {}
+        for key,label in (('move','Select / Move'),('pencil','Pencil'),('eraser','Eraser')):
+            button=self.button(label,lambda checked=False,k=key:self.set_tool(k))
+            button.setCheckable(True);button.setChecked(key=='move')
+            tools_row.addWidget(button);self.tool_buttons[key]=button
+        self.color_button=self.button('Brush Color',self.choose_brush_color)
+        tools_row.addWidget(self.color_button)
+        self.color_swatch=QLabel();self.color_swatch.setFixedSize(22,22);tools_row.addWidget(self.color_swatch)
+        tools_row.addWidget(QLabel(t('Brush Size')))
+        self.brush_size=QSpinBox();self.brush_size.setRange(MIN_BRUSH_SIZE,MAX_BRUSH_SIZE)
+        self.brush_size.setValue(DEFAULT_BRUSH_SIZE);self.brush_size.valueChanged.connect(self._brush_changed)
+        tools_row.addWidget(self.brush_size)
+        tools_row.addWidget(QLabel(t('Painting only changes the current frame')))
+        tools_row.addStretch(1)
+        layout.addLayout(tools_row)
         split = QSplitter(Qt.Orientation.Horizontal)
         resources = QWidget()
         resources.setMinimumWidth(140)
@@ -109,6 +129,13 @@ class FrameEditor(QWidget):
         self.canvas_stack.addWidget(self.alignment_view)
         self.canvas.moved.connect(self.move_content)
         self.canvas.interaction_cancelled.connect(lambda:self.request_preview())
+        self.canvas.stroke_started.connect(self.begin_stroke)
+        self.canvas.stroke_moved.connect(self.stroke_point)
+        self.canvas.stroke_finished.connect(self.finish_stroke)
+        self.canvas.stroke_cancelled.connect(self.cancel_stroke)
+        self.brush_color=(255,82,82,255)
+        self.stroke=None;self.stroke_last=None;self.stroke_was_eraser=False
+        self._frame_reference=None
         self.alignment_view.root_selected.connect(host._set_root)
         self.alignment_view.roi_selected.connect(host._set_roi)
         mid.addWidget(self.canvas_stack,1)
@@ -130,6 +157,7 @@ class FrameEditor(QWidget):
         mid.addLayout(speed)
         self.timeline = EditorTimeline()
         self.timeline.selection_changed.connect(self._selection_changed)
+        self.timeline.frame_menu_requested.connect(self.frame_context_menu)
         self.timeline.time_selected.connect(self.select_time)
         self.timeline.blocks_moved.connect(self.move_blocks)
         self.timeline.action.connect(self.action)
@@ -189,6 +217,20 @@ class FrameEditor(QWidget):
         reference_form.addRow(self.button('Apply Animation Offset',lambda:host.set_animation_offset(self.animation_x.value(),self.animation_y.value())))
         reference_form.addRow(self.button('Reset Animation Offset',lambda:host.set_animation_offset(0,0)))
         form.addRow(self.reference_group)
+        self.reference_frame_group=QGroupBox(t('Edit Reference Frame'))
+        reference_frame_form=QFormLayout(self.reference_frame_group)
+        reference_frame_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
+        self.show_frame_reference=QCheckBox(t('Show Edit Reference Frame'));self.show_frame_reference.setChecked(True)
+        reference_frame_form.addRow(self.show_frame_reference);self.show_frame_reference.toggled.connect(self.request_preview)
+        self.frame_reference_opacity=self.decimal(0,.7,.15)
+        reference_frame_form.addRow(t('Edit Reference Opacity'),self.frame_reference_opacity)
+        self.frame_reference_opacity.valueChanged.connect(self.request_preview)
+        self.frame_reference_label=QLabel(t('No edit reference frame'))
+        self.frame_reference_label.setObjectName('muted');self.frame_reference_label.setWordWrap(True)
+        reference_frame_form.addRow(self.frame_reference_label)
+        reference_frame_form.addRow(self.button('Set the Current Frame as Edit Reference',self.set_reference_from_current))
+        reference_frame_form.addRow(self.button('Clear Edit Reference Frame',self.clear_frame_reference))
+        form.addRow(self.reference_frame_group)
         self.selection_label = QLabel();form.addRow(self.selection_label)
         self.track_target = QComboBox()
         for track in host.project.timeline_edit.track_layout: self.track_target.addItem(t(track.name),track.id)
@@ -346,7 +388,13 @@ class FrameEditor(QWidget):
             field.blockSignals(True);field.setValue(value);field.blockSignals(False)
         # The Ghost checkbox is owned by _sync_ghost(); the other reference controls follow the Reference.
         for control in (self.show_reference,self.show_reference_ground,self.show_reference_axes,self.reference_opacity):control.setEnabled(bool(reference))
+        self.timeline.animation_id=p.animation_id
         self.timeline.set_edit(e,p.video.fps,self.selected_ids)
+        saved=self._saved_frame_reference()
+        self._frame_reference=saved if saved and str(saved.get('animation_id',''))==p.animation_id else None
+        self.timeline.reference_index=self._frame_reference['frame_index'] if self._frame_reference else None
+        self._sync_reference_labels()
+        self._update_color_swatch()
         self.clip_selector.blockSignals(True);self.clip_selector.clear()
         for row in p.library.in_group(p.current_group_id,kinds={'ANIMATION'}):
             self.clip_selector.addItem(row.name,row.animation_id)
@@ -422,6 +470,7 @@ class FrameEditor(QWidget):
 
     def cancel_active_interaction(self):
         "Called on every context switch so a half-finished drag can never reach another Animation."
+        self.stroke=None;self.stroke_last=None
         self.canvas.cancel_active_interaction()
         self.timeline.cancel_active_interaction()
         self.canvas.drag_start=None;self.canvas.dragging=False
@@ -438,15 +487,165 @@ class FrameEditor(QWidget):
         reference=character.character_reference if character is not None else project.character_reference
         editing=bool(reference and reference.reference_animation_id==project.animation_id)
         if reference is None:
-            self.show_idle_ghost.setChecked(False);self.show_idle_ghost.setEnabled(False)
+            # The automatic off state must never be recorded as a user override.
+            self.show_idle_ghost.blockSignals(True)
+            self.show_idle_ghost.setChecked(False)
+            self.show_idle_ghost.blockSignals(False)
+            self.show_idle_ghost.setEnabled(False)
             self.ghost_hint.setText(t('This Character has no Character Reference yet.'))
         elif editing:
-            self.show_idle_ghost.setChecked(False);self.show_idle_ghost.setEnabled(False)
+            # Forcing the ghost off must not look like a user override for other Animations.
+            self.show_idle_ghost.blockSignals(True)
+            self.show_idle_ghost.setChecked(False)
+            self.show_idle_ghost.blockSignals(False)
+            self.show_idle_ghost.setEnabled(False)
             self.ghost_hint.setText(t('Ghost is hidden while editing the Reference Animation.'))
         else:
             self.show_idle_ghost.setEnabled(True)
             if not self._ghost_override:self.show_idle_ghost.setChecked(True)
             self.ghost_hint.setText('')
+
+    def set_tool(self,tool):
+        "Select / Move, Pencil and Eraser share one canvas; only the current frame is edited."
+        for key,button in getattr(self,'tool_buttons',{}).items():
+            button.blockSignals(True);button.setChecked(key==tool);button.blockSignals(False)
+        if hasattr(self,'canvas'):
+            self.canvas.set_tool(tool)
+            self.canvas.brush_size=self.brush_size.value()
+        self.tool=hasattr(self,'canvas') and self.canvas.tool
+
+    def _brush_changed(self,value):
+        if hasattr(self,'canvas'):self.canvas.brush_size=int(value)
+
+    def choose_brush_color(self):
+        "QColorDialog with alpha; the brush keeps straight RGBA."
+        color=QColorDialog.getColor(QColor(*self.brush_color),self,t('Brush Color'),
+            QColorDialog.ColorDialogOption.ShowAlphaChannel)
+        if not color.isValid():return
+        self.brush_color=(color.red(),color.green(),color.blue(),color.alpha())
+        self._update_color_swatch()
+
+    def _update_color_swatch(self):
+        if not hasattr(self,'color_swatch'):return
+        pixmap=QPixmap(22,22);pixmap.fill(QColor(*self.brush_color))
+        self.color_swatch.setPixmap(pixmap)
+
+    def frame_reference_state(self):
+        return dict(self._frame_reference) if getattr(self,'_frame_reference',None) else None
+
+    def set_frame_reference_state(self,value,capture=True):
+        "Editor-only Frame Reference: Animation + frame, never a Character Reference."
+        reference=dict(value) if value else None
+        if reference is not None and str(reference.get('animation_id',''))!=self.host.project.animation_id:
+            reference=None
+        self._frame_reference=reference
+        self.timeline.reference_index=reference['frame_index'] if reference else None
+        self._sync_reference_labels()
+        if capture:
+            self.host.library_controller.capture()
+            self.host.dirty=True
+            self.host._update_state()
+        self.request_preview()
+
+    def set_reference_from_current(self):
+        marker=self.current_source_index()
+        if marker is None:return
+        self.set_frame_reference_state({'animation_id':self.host.project.animation_id,'frame_index':int(marker)})
+
+    def set_frame_reference_for(self,frame_index):
+        animation_id=self.host.project.animation_id
+        if not animation_id:return
+        self.set_frame_reference_state({'animation_id':animation_id,'frame_index':int(frame_index)})
+
+    def clear_frame_reference(self):
+        self.set_frame_reference_state(None)
+
+    def _sync_reference_labels(self):
+        reference=getattr(self,'_frame_reference',None)
+        if not hasattr(self,'frame_reference_label'):return
+        self.frame_reference_label.setText(t('Edit reference: frame {frame}',frame=reference['frame_index']) if reference
+            else t('No edit reference frame'))
+
+    def _saved_frame_reference(self):
+        p=self.host.project;group=p.library.groups.get(p.current_group_id)
+        if group is None:return None
+        for state in (group.animation_states.get(p.animation_id),group.ui_state):
+            if state is not None and state.frame_reference:return dict(state.frame_reference)
+        return None
+
+    def current_source_index(self):
+        if not self.provider or not len(self.provider):return None
+        return int(self.provider.project.final_timing[self.index]['source_index'])
+
+    def frame_context_menu(self,source_index,global_pos):
+        "Timeline frame menu; this is not the Character Coordinate Reference."
+        if self.host.interaction_busy:return
+        frame_index=int(source_index)
+        menu=QMenu(self)
+        menu.addAction(t('Set as Edit Reference Frame')).triggered.connect(lambda checked=False:self.set_frame_reference_for(frame_index))
+        menu.addAction(t('Clear Edit Reference Frame')).triggered.connect(lambda checked=False:self.clear_frame_reference())
+        menu.exec(global_pos)
+
+    def stroke_base(self,source_index):
+        "The aligned frame is the layer Pencil draws on; source files are never touched."
+        if not self.provider:return None
+        path=frame_path(self.provider.cache_dir/'aligned_frames',int(source_index))
+        return self.provider.cache.read(path) if path.is_file() else None
+
+    def load_edit_layers(self,source_index,shape):
+        row=self.host.project.raster_edit(self.host.project.animation_id,source_index)
+        paint=load_paint(row.paint_layer,shape).copy() if row is not None and row.paint_layer else None
+        erase=load_erase(row.erase_mask,shape).copy() if row is not None and row.erase_mask else None
+        return paint,erase
+
+    def begin_stroke(self,x,y):
+        if self.host.interaction_busy or not self.provider or not len(self.provider):return
+        source_index=self.current_source_index()
+        base=self.stroke_base(source_index) if source_index is not None else None
+        if base is None:return
+        chain=frame_chain(self.provider.project,self.index,source_index)
+        paint,erase=self.load_edit_layers(source_index,base.shape)
+        self.stroke=RasterStroke(self.host.project.animation_id,source_index,base.shape[:2],paint,erase)
+        self.stroke_chain=chain
+        self.stroke_size=int(self.brush_size.value())
+        self.stroke_was_eraser=self.canvas.tool=='eraser'
+        self.stroke_last=None
+        self.stroke_point(x,y)
+
+    def stroke_point(self,x,y):
+        if self.stroke is None:return
+        fx,fy=canvas_to_frame(self.stroke_chain,x,y)
+        tool='eraser' if self.stroke_was_eraser else 'pencil'
+        if self.stroke_last is None:
+            self.stroke.dot(fx,fy,tool,self.stroke_size,self.brush_color)
+        else:
+            self.stroke.segment(self.stroke_last[0],self.stroke_last[1],fx,fy,tool,self.stroke_size,self.brush_color)
+        self.stroke_last=(fx,fy)
+        self.request_preview()
+
+    def finish_stroke(self):
+        "One press -> moves -> release is exactly one revision and one undo command."
+        stroke=self.stroke
+        self.stroke=None;self.stroke_last=None
+        if stroke is None or not stroke.changed:
+            self.request_preview();return
+        row=self.host.project.raster_edit(stroke.animation_id,stroke.frame_index)
+        revision=(row.revision if row is not None else 0)+1
+        directory=pixel_edit_directory(self.host.project.project_id,self.host.project_file,stroke.animation_id)
+        paint_path,erase_path=write_revision(directory,stroke.animation_id,stroke.frame_index,revision,stroke.paint,stroke.erase)
+        self.host.apply_pixel_stroke(stroke.animation_id,stroke.frame_index,str(paint_path),str(erase_path),revision,
+            t('Eraser Stroke') if self.stroke_was_eraser else t('Pencil Stroke'))
+        self.request_preview()
+
+    def cancel_stroke(self):
+        self.stroke=None;self.stroke_last=None
+        self.request_preview()
+
+    def pending_stroke_layers(self):
+        "Copies for the preview worker; the UI keeps mutating the originals."
+        stroke=getattr(self,'stroke',None)
+        if stroke is None or not stroke.changed:return None
+        return (stroke.frame_index,stroke.paint.copy(),stroke.erase.copy())
 
     def command(self,label,fn):
         if self.host.interaction_busy:return
@@ -573,6 +772,13 @@ class FrameEditor(QWidget):
             else:self.stop()
         else:self.select(self.index+1)
 
+    def _output_index_for_source(self,provider,source_index):
+        "Output position of a source frame; the edit reference is stored by source frame."
+        if provider is None:return None
+        for position,row in enumerate(provider.project.final_timing):
+            if int(row['source_index'])==int(source_index):return position
+        return None
+
     def request_preview(self,*args):
         self.revision+=1;self.pending=True
         self.debounce.start(0 if self.timer.isActive() else 25)
@@ -590,6 +796,9 @@ class FrameEditor(QWidget):
         show_idle=self.show_reference.isChecked() and self.show_idle_ghost.isChecked()
         reference_source=self.reference_source if show_idle else None
         load_error=self.reference_load_error if show_idle else None
+        pending=self.pending_stroke_layers()
+        reference_state=self.frame_reference_state() if self.show_frame_reference.isChecked() else None
+        reference_output=self._output_index_for_source(provider,reference_state['frame_index']) if reference_state else None
         def operation(progress,cancel):
             pixels=provider.get_final_frame(index)
             layers=[]
@@ -609,19 +818,30 @@ class FrameEditor(QWidget):
                     f=refs[-1];value=copy.deepcopy(e.frame_overrides.get(f.id,FrameOverride()));value.opacity*=.3
                     ref=transform_layer(provider.cache.read(frame_path(provider.cache_dir/'aligned_frames',f.source_index)),value)
                     output=composite_rgba([output,ref],pixels.shape)
+            if pending is not None:
+                # Live feedback only; the committed revision arrives with the next render.
+                source_index,paint,erase=pending
+                scale,dx,dy=frame_chain(provider.project,index,source_index)
+                canvas_paint,canvas_erase=canvas_layers(paint,erase,(scale,dx,dy),(pixels.shape[0],pixels.shape[1]))
+                output=composite_edit(output,canvas_paint,canvas_erase)
+            reference=None
+            if reference_output is not None and reference_output!=index:
+                pixels_row=provider.get_final_frame(reference_output)
+                reference=None if pixels_row is None else pixels_row
             idle=None;reference_error=load_error
             if reference_source:
                 try:idle=reference_source.output(provider.project.layout,provider.project.sprite_cell.preserve_aspect_ratio,cancel)
                 except (OSError,ValueError,KeyError) as error:reference_error=str(error)
-            return output,copy.deepcopy(provider.frame_data(index)),revision,idle,reference_error
+            return output,copy.deepcopy(provider.frame_data(index)),revision,idle,reference_error,reference
         self.worker=Worker(operation,self);self.worker.result.connect(self._result);self.worker.failed.connect(self._error);self.worker.finished.connect(self._finished);self.worker.start()
 
     def _result(self,result):
-        pixels,frame,revision,idle,reference_error=result
+        pixels,frame,revision,idle,reference_error,reference_pixels=result
         if revision!=self.revision:return
         self.last_pixels=pixels
         self.canvas.set_image(pixels)
         self.canvas.set_idle_ghost(idle,self.reference_opacity.value())
+        self.canvas.set_frame_reference(reference_pixels,self.frame_reference_opacity.value(),self.show_frame_reference.isChecked())
         frame.root,frame.bbox=frame.cell_root,frame.cell_bbox
         self.canvas.frame=frame
         p=self.provider.project

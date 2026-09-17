@@ -1,7 +1,10 @@
-from PySide6.QtCore import Qt, Signal, QRectF, QPointF
-from PySide6.QtGui import QBrush, QColor, QPen, QPainter
+import json
+from PySide6.QtCore import Qt, Signal, QRectF, QPointF, QMimeData
+from PySide6.QtGui import QBrush, QColor, QPen, QPainter, QPixmap, QDrag, QFont, QFontMetrics
 from PySide6.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsRectItem, QGraphicsItem
 from app.i18n import t
+
+FRAME_MIME = 'application/x-aivsprite-frames'
 
 
 class EditorTimeline(QGraphicsView):
@@ -9,6 +12,7 @@ class EditorTimeline(QGraphicsView):
     time_selected = Signal(float)
     blocks_moved = Signal(object, float, str)
     action = Signal(str)
+    frame_menu_requested = Signal(int, object)
     label_width = 80
     row_height = 54
     ruler_height = 28
@@ -32,6 +36,13 @@ class EditorTimeline(QGraphicsView):
         self.rebuilding = False
         self.selecting = None
         self.rubber = None
+        self.animation_id = ""
+        self.reference_index = None
+        self.frame_drag_active = False
+        # Block drags move items; minimal viewport updates would leave trails behind them.
+        self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.BoundingRectViewportUpdate)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._context_menu)
         self.scene().selectionChanged.connect(self._selection)
 
     def ids(self):
@@ -183,6 +194,12 @@ class EditorTimeline(QGraphicsView):
             if delta.manhattanLength() > 5:
                 self.drag = (origin,start,track,True)
                 for ident in self.ids(): self.items_by_id[ident].setPos(delta.x(), delta.y())
+            if self._outside(event) and not self.frame_drag_active:
+                self.frame_drag_active = True
+                try:
+                    self._begin_frame_drag()
+                finally:
+                    self.frame_drag_active = False
             return
         super().mouseMoveEvent(event)
 
@@ -202,6 +219,60 @@ class EditorTimeline(QGraphicsView):
                 for item in self.items_by_id.values(): item.setPos(0,0)
         self.scrubbing = False
         super().mouseReleaseEvent(event)
+
+    def _outside(self, event):
+        "Leaving the widget is the gesture that hands frames to the Project Library."
+        return not self.viewport().rect().contains(event.position().toPoint())
+
+    def _context_menu(self, point):
+        item = self._block(point)
+        if item is None or not self.edit:
+            return
+        ident = item.data(0)
+        frame = next((f for f in self.edit.timeline_clips if f.id == ident), None)
+        if frame is not None:
+            self.frame_menu_requested.emit(frame.source_index, self.viewport().mapToGlobal(point))
+
+    def _drag_label(self, label):
+        "A light text label; the Timeline is never snapshotted into a drag pixmap."
+        font = QFont()
+        font.setPixelSize(12)
+        width = max(48, QFontMetrics(font).horizontalAdvance(label) + 18)
+        pixmap = QPixmap(width, 24)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setBrush(QBrush(QColor(35, 44, 58, 220)))
+        painter.setPen(QPen(QColor('#8fd3ff')))
+        painter.drawRoundedRect(.5, .5, width - 1, 23, 4, 4)
+        painter.setPen(QColor('#e8f2ff'))
+        painter.setFont(font)
+        painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, label)
+        painter.end()
+        return pixmap
+
+    def _begin_frame_drag(self):
+        "Hand the selected frames to the Project Library as a derived sequence request."
+        selected = self.edit.selected(self.ids(), editable=False) if self.edit else []
+        if not selected:
+            return False
+        ordered = sorted(selected, key=lambda frame: (frame.start, frame.id))
+        label = t('{count} Frames', count=len(ordered))
+        payload = {'animation_id': self.animation_id, 'frames': [frame.source_index for frame in ordered], 'label': label}
+        mime = QMimeData()
+        mime.setData(FRAME_MIME, json.dumps(payload).encode())
+        drag = QDrag(self)
+        drag.setMimeData(mime)
+        pixmap = self._drag_label(label)
+        drag.setPixmap(pixmap)
+        drag.setHotSpot(pixmap.rect().center())
+        self.drag = None
+        for item in self.items_by_id.values():
+            item.setPos(0, 0)
+        self.viewport().update()
+        drag.exec(Qt.DropAction.CopyAction)
+        self.viewport().update()
+        return True
 
     def zoom(self, factor):
         self.pixels_per_second = max(60.,min(8000.,self.pixels_per_second*factor))
@@ -249,6 +320,14 @@ class EditorTimeline(QGraphicsView):
             painter.setPen(QPen(QColor('#d0fff1'),2))
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRect(item.mapRectToScene(item.rect()))
+        if self.reference_index is not None and self.edit:
+            marker = next((f for f in self.edit.frames() if f.source_index == self.reference_index), None)
+            if marker is not None:
+                mx = self.label_width+marker.start*self.pixels_per_second
+                painter.setPen(QPen(QColor('#c8a2ff'),2,Qt.PenStyle.DashLine))
+                painter.drawLine(QPointF(mx,self.ruler_height),QPointF(mx,self.sceneRect().height()))
+                painter.setPen(QPen(QColor('#c8a2ff')))
+                painter.drawText(QPointF(mx+3,self.ruler_height+13),t('Edit Reference'))
         painter.setPen(QPen(QColor('#ffca74'),2))
         x=self.label_width+self.play_time*self.pixels_per_second
         painter.drawLine(QPointF(x,0),QPointF(x,self.sceneRect().height()))

@@ -119,6 +119,8 @@ class Pipeline:
         base=signature(self.align_signature(),asdict(p.timeline_edit),p.video.fps,p.export_settings.loop,"editor_v1") if p.timeline_edit.enabled else self.align_signature()
         if p.animation_transform.active:base=signature(base,"animation_offset_v1",asdict(p.animation_transform))
         if p.frame_corrections:base=signature(base,"frame_correction_v1",sorted((int(k),tuple(v)) for k,v in p.frame_corrections.items()))
+        if p.pixel_edits:base=signature(base,"pixel_edit_v1",sorted((animation_id,int(index),int(row.revision),str(row.paint_layer),str(row.erase_mask))
+            for animation_id,frames in p.pixel_edits.items() for index,row in frames.items()))
         return base
 
     def sheet_signature(self):

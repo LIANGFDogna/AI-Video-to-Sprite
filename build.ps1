@@ -262,7 +262,25 @@ if ($spriteMachineVerify.ExitCode -ne 0) { throw "Packaged State Machine restart
 $spriteMachineReport = Get-Content -LiteralPath (Join-Path $spriteMachineDirectory 'validation.json') -Raw | ConvertFrom-Json
 if ($spriteMachineReport.status -ne 'passed' -or -not $spriteMachineReport.restart_verified -or -not $spriteMachineReport.set_state_plays_via_set_provider) { throw 'Missing State Machine acceptance result.' }
 
+$spritePixelDirectory = Join-Path $PSScriptRoot ('build\pixel-smoke-' + [Guid]::NewGuid().ToString('N'))
+$spritePixelSmoke = Start-Process -FilePath $spriteExecutable -ArgumentList @('--smoke-pixel-tools', ('"' + $spritePixelDirectory + '"')) -WindowStyle Hidden -PassThru
+if (-not $spritePixelSmoke.WaitForExit(420000)) {
+    $spritePixelSmoke.Kill()
+    throw 'Packaged pixel tools / Group drop zones / derived frames timed out.'
+}
+$spritePixelSmoke.Refresh()
+if ($spritePixelSmoke.ExitCode -ne 0) { throw "Packaged pixel tools failed ($($spritePixelSmoke.ExitCode)). Check logs/app.log." }
+$spritePixelVerify = Start-Process -FilePath $spriteExecutable -ArgumentList @('--smoke-pixel-tools', ('"' + $spritePixelDirectory + '"'), '--verify-pixel-tools') -WindowStyle Hidden -PassThru
+if (-not $spritePixelVerify.WaitForExit(240000)) {
+    $spritePixelVerify.Kill()
+    throw 'Packaged pixel tool restart verification timed out.'
+}
+$spritePixelVerify.Refresh()
+if ($spritePixelVerify.ExitCode -ne 0) { throw "Packaged pixel tool restart verification failed ($($spritePixelVerify.ExitCode)). Check logs/app.log." }
+$spritePixelReport = Get-Content -LiteralPath (Join-Path $spritePixelDirectory 'validation.json') -Raw | ConvertFrom-Json
+if ($spritePixelReport.status -ne 'passed' -or -not $spritePixelReport.restart_verified -or $spritePixelReport.canvas_trail_pixel_difference -ne 0) { throw 'Missing pixel tool acceptance result.' }
+
 $spritePathReports = & (Join-Path $PSScriptRoot 'scripts\verify_path_ui.ps1') -Executable $spriteExecutable
-$spriteReceipt = @{ status = 'passed'; build_version = '20260917-state-machine'; path_validation = $spritePathReports; reference_validation = $spriteReferenceReports; group_validation = $spriteGroupReport; character_validation = $spriteCharacterReport; frame_validation = $spriteFrameReport; set_validation = $spriteSetReport; machine_validation = $spriteMachineReport; editor_validation = $spriteEditorReport; executable_sha256 = (Get-FileHash -LiteralPath $spriteExecutable -Algorithm SHA256).Hash; verified_at = (Get-Date).ToString('o') }
+$spriteReceipt = @{ status = 'passed'; build_version = '20260917-pixel-tools-frame-drag'; path_validation = $spritePathReports; reference_validation = $spriteReferenceReports; group_validation = $spriteGroupReport; character_validation = $spriteCharacterReport; frame_validation = $spriteFrameReport; set_validation = $spriteSetReport; machine_validation = $spriteMachineReport; pixel_validation = $spritePixelReport; editor_validation = $spriteEditorReport; executable_sha256 = (Get-FileHash -LiteralPath $spriteExecutable -Algorithm SHA256).Hash; verified_at = (Get-Date).ToString('o') }
 $spriteReceipt | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $spriteReleaseDirectory 'release-validation.json') -Encoding UTF8
 Write-Host "Built $spriteExecutable. Video input uses FFmpeg; frame sequence input does not. All release checks passed."

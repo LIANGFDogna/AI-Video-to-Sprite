@@ -148,9 +148,10 @@ def test_group_export_dialog_eligibility_and_force_empty(qt,tmp_path):
     finally:close_window(qt,w)
 
 def drop_item(w,monkeypatch,dragged,target,position):
-    tree=w.library_panel.tree;item=w.library_panel.items[target]
-    monkeypatch.setattr(tree,'itemAt',lambda point:item)
-    monkeypatch.setattr(tree,'dropIndicatorPosition',lambda:position)
+    tree=w.library_panel.tree
+    zone={QAbstractItemView.DropIndicatorPosition.AboveItem:'above',
+          QAbstractItemView.DropIndicatorPosition.BelowItem:'below'}.get(position,'on')
+    monkeypatch.setattr(tree,'drop_target',lambda point:(target[0],target[1],zone))
     mime=QMimeData();mime.setData(MIME,json.dumps([dragged[0],dragged[1]]).encode())
     event=QDropEvent(QPointF(4,4),Qt.DropAction.MoveAction,mime,Qt.MouseButton.LeftButton,Qt.KeyboardModifier.NoModifier)
     tree.dropEvent(event);return event

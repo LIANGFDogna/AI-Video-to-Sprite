@@ -14,6 +14,7 @@ from app.models.character_profile import CharacterProfile
 from app.models.timeline_edit import TimelineEdit
 from app.models.character_reference import CharacterReference, AnimationTransform
 from app.models.project_library import ProjectLibrary
+from app.models.pixel_edit import PerFrameRasterEdit, edits_from_dict
 
 ALIGNMENT_MODES = ("ROOT XY LOCK", "GROUND LOCK", "ROOT X + GROUND Y")
 PROJECT_FIELDS = ("project_name", "project_version", "project_type", "default_fps", "source_canvas", "output_canvas",
@@ -137,6 +138,7 @@ class Project:
     character_reference: CharacterReference | None = None
     animation_transform: AnimationTransform = field(default_factory=AnimationTransform)
     frame_corrections: dict[int, tuple[int, int]] = field(default_factory=dict)
+    pixel_edits: dict[str, dict[int, PerFrameRasterEdit]] = field(default_factory=dict)
     timeline_edit: TimelineEdit = field(default_factory=TimelineEdit)
     final_frames: list[FrameData] = field(default_factory=list)
     final_timing: list[dict] = field(default_factory=list)
@@ -146,7 +148,7 @@ class Project:
 
     @property
     def has_final_edits(self):
-        return self.timeline_edit.enabled or self.animation_transform.active or bool(self.frame_corrections)
+        return self.timeline_edit.enabled or self.animation_transform.active or bool(self.frame_corrections) or bool(self.pixel_edits)
 
     def frame_correction(self, index):
         "Per-frame alignment offset in project canvas pixels; (0,0) when unset."
@@ -168,6 +170,27 @@ class Project:
             for index in indices:
                 self.frame_corrections.pop(int(index), None)
         return self.frame_corrections
+
+    def raster_edit(self, animation_id, frame_index):
+        "PerFrame Raster Edit of one Animation frame; None when the frame is untouched."
+        return (self.pixel_edits.get(animation_id) or {}).get(int(frame_index))
+
+    def set_raster_edit(self, animation_id, frame_index, paint_layer, erase_mask, revision):
+        row = PerFrameRasterEdit(animation_id, int(frame_index), str(paint_layer), str(erase_mask), int(revision)).validate()
+        self.pixel_edits.setdefault(animation_id, {})[int(frame_index)] = row
+        return row
+
+    def drop_raster_edit(self, animation_id, frame_index):
+        frames = self.pixel_edits.get(animation_id)
+        if not frames:
+            return None
+        row = frames.pop(int(frame_index), None)
+        if not frames:
+            self.pixel_edits.pop(animation_id, None)
+        return row
+
+    def raster_edit_frames(self, animation_id):
+        return sorted((self.pixel_edits.get(animation_id) or {}).keys())
 
     @property
     def output_frames(self):
@@ -231,6 +254,13 @@ class Project:
             raise ValueError("Selected Character does not exist")
         self.timeline_edit.validate(self.video.frame_count)
         AnimationTransform.from_dict(self.animation_transform)
+        for animation_id, frames in self.pixel_edits.items():
+            if len(animation_id) != 32 or any(c not in "0123456789abcdef" for c in animation_id):
+                raise ValueError("Invalid raster edit Animation")
+            for index, row in frames.items():
+                row.validate()
+                if row.animation_id != animation_id or row.frame_index != int(index):
+                    raise ValueError("Invalid raster edit frame")
         for index, value in self.frame_corrections.items():
             if not isinstance(index, int) or index < 0 or len(value) != 2:
                 raise ValueError("Invalid frame correction")
@@ -337,6 +367,14 @@ class Project:
                     resource["path"] = os.path.relpath(resource["path"], path.parent)
                 except ValueError:
                     pass
+        for frames in (data.get("pixel_edits") or {}).values():
+            for row in frames.values():
+                for key in ("paint_layer", "erase_mask"):
+                    if row.get(key):
+                        try:
+                            row[key] = os.path.relpath(row[key], path.parent)
+                        except ValueError:
+                            pass
         data.update(fps=self.video.fps, frame_count=self.video.frame_count,
                     green_color=list(self.chroma_key_settings.green_color), padding=self.sprite_cell.padding)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -357,6 +395,11 @@ class Project:
         for resource in data.get("library", {}).get("resources", {}).values():
             if resource.get("path"):
                 resource["path"] = str((path.parent / resource["path"]).resolve())
+        for frames in (data.get("pixel_edits") or {}).values():
+            for row in frames.values():
+                for key in ("paint_layer", "erase_mask"):
+                    if row.get(key):
+                        row[key] = str((path.parent / row[key]).resolve())
         return cls.from_dict(data)
 
     @classmethod
@@ -387,6 +430,7 @@ class Project:
         data["animation_transform"] = AnimationTransform.from_dict(data.get("animation_transform"))
         data["frame_corrections"] = {int(k): (int(v[0]), int(v[1]))
             for k, v in (data.get("frame_corrections") or {}).items() if int(v[0]) or int(v[1])}
+        data["pixel_edits"] = edits_from_dict(data.get("pixel_edits"))
         data["layout"] = CellLayout(**data["layout"]) if data.get("layout") else None
         data["character_profile"] = CharacterProfile.from_dict(data["character_profile"]) if data.get("character_profile") else None
         project = cls(**data)

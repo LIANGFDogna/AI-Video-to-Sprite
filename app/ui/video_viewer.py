@@ -22,6 +22,8 @@ class VideoViewer(QGraphicsView):
         self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
         self.setMinimumSize(320, 220)
         self.setFrameShape(QGraphicsView.Shape.NoFrame)
+        # Minimal viewport updates leave dirty pixels behind a moving item.
+        self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.BoundingRectViewportUpdate)
         self.display_scale = 1.0
         self.image_size = (0, 0)
         self.frame = None

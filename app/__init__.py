@@ -1,4 +1,4 @@
 """AI Video to Sprite desktop application."""
 __version__ = "0.4.0"
 
-__build__ = "20260917-state-machine"
+__build__ = "20260917-pixel-tools-frame-drag"

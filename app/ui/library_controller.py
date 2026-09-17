@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 from dataclasses import asdict
 import json
+import tempfile
 from pathlib import Path
 from PIL import Image
 import numpy as np
@@ -21,8 +22,11 @@ from app.models.timeline_edit import EditHistory
 from app.ui.dialogs import MessageBox, FileDialog, reveal_in_explorer
 from app.models.project_library import SOURCE_KINDS
 from app.utils.paths import cache_directory
+from app.utils.cache import save_rgba
 from app.utils.rgba_image import read_rgba, to_rgba8
 from app.core.group_export import sheet_path
+from app.core.final_frame_provider import FinalFrameProvider
+from app.core.project_workspace import sanitize_project_name
 
 
 class RoutedEditHistory(EditHistory):
@@ -68,7 +72,11 @@ class LibraryController(QObject):
             editor_tab=e.inspector.currentIndex(),page=h.steps.currentIndex(),preview_mode=h.preview_mode.currentData(),
             preview_fps=e.preview_fps.value(),loop=e.loop.isChecked(),onion=e.onion.isChecked(),ghost=e.ghost.isChecked(),
             neighbors=e.neighbors.value(),ghost_opacity=e.ghost_opacity.value(),playing=e.timer.isActive(),selected_frames=list(e.selected_ids),
-            reference_ghost=e.show_idle_ghost.isChecked(),reference_ghost_opacity=e.reference_opacity.value())
+            reference_ghost=(e.show_idle_ghost.isChecked() if e.show_idle_ghost.isEnabled() else None),
+            reference_ghost_opacity=e.reference_opacity.value(),
+            frame_reference=e.frame_reference_state() if hasattr(e,'frame_reference_state') else None,
+            frame_reference_visible=e.show_frame_reference.isChecked() if hasattr(e,'show_frame_reference') else True,
+            frame_reference_opacity=e.frame_reference_opacity.value() if hasattr(e,'frame_reference_opacity') else .15)
         g.ui_state=state
         if state.animation_id:g.animation_states[state.animation_id]=copy.deepcopy(state)
 
@@ -123,6 +131,14 @@ class LibraryController(QObject):
                 e.show_idle_ghost.blockSignals(False)
                 e.reference_opacity.setValue(min(.7,max(0.,state.reference_ghost_opacity)))
                 e._ghost_override=state.reference_ghost is not None
+            if hasattr(e,'set_frame_reference_state'):
+                e.show_frame_reference.blockSignals(True)
+                e.show_frame_reference.setChecked(bool(state.frame_reference_visible))
+                e.show_frame_reference.blockSignals(False)
+                e.frame_reference_opacity.blockSignals(True)
+                e.frame_reference_opacity.setValue(min(.7,max(0.,state.frame_reference_opacity)))
+                e.frame_reference_opacity.blockSignals(False)
+                e.set_frame_reference_state(state.frame_reference,capture=False)
             e.bind();e.inspector.setCurrentIndex(state.editor_tab)
             h.preview_mode.setCurrentIndex(max(0,h.preview_mode.findData(state.preview_mode)))
             for control,value in ((e.preview_fps,state.preview_fps),(e.neighbors,state.neighbors),(e.ghost_opacity,state.ghost_opacity)):control.setValue(value)
@@ -295,6 +311,117 @@ class LibraryController(QObject):
             return True
         self.mutate(operation,'Move to Character')
         h.project.sync_character_reference()
+
+    def drop_group_on_character(self,group_id,character_id):
+        "Drop On a Character or Loose Groups node: the Group becomes one of that owner's roots."
+        h=self.host;lib=h.project.library
+        if h.interaction_busy or group_id not in lib.groups:return None
+        group=lib.groups[group_id]
+        if group.character_id==character_id and group.parent_id is None:return group_id
+        clear=False;clear_sets=False;clear_machines=False
+        if [slot for row,slot in lib.set_references_for_group(group_id) if row.character_id!=character_id]:
+            if MessageBox.question(h,t('Move to Character'),
+                t('The Animation is used by an Animation Set. Clear the references and move it?'),
+                MessageBox.StandardButton.Yes|MessageBox.StandardButton.Cancel,
+                MessageBox.StandardButton.Cancel)!=MessageBox.StandardButton.Yes:return None
+            clear_sets=True
+        try:
+            lib.check_machine_move(group_id,character_id,False)
+        except ValueError:
+            if MessageBox.question(h,t('Move to Character'),
+                t('The Animation is used by a State Machine. Clear the references and move it?'),
+                MessageBox.StandardButton.Yes|MessageBox.StandardButton.Cancel,
+                MessageBox.StandardButton.Cancel)!=MessageBox.StandardButton.Yes:return None
+            clear_machines=True
+        if [character for character in lib.reference_characters_for(group_id) if character.id!=character_id]:
+            if MessageBox.question(h,t('Character Reference'),
+                t('The animation is the current Character Reference. Clear the Character Reference and move it?'),
+                MessageBox.StandardButton.Yes|MessageBox.StandardButton.Cancel,
+                MessageBox.StandardButton.Cancel)!=MessageBox.StandardButton.Yes:return None
+            clear=True
+        def operation(tree):
+            tree.set_group_character(group_id,character_id,clear,clear_sets=clear_sets,clear_machines=clear_machines)
+            tree.move_group(group_id,None,clear_references=clear,clear_sets=clear_sets,clear_machines=clear_machines)
+            tree.groups[group_id].alignment_review_required=True
+            return group_id
+        result=self.mutate(operation,'Move to Character')
+        h.project.sync_character_reference()
+        return result
+
+    def _derived_folder(self,project_file,name):
+        "Snapshot frames live in the project workspace, never in a temporary directory."
+        root=(Path(project_file).parent/'sequences') if project_file else Path(tempfile.gettempdir())/'AI Video to Sprite'/'derived'
+        root.mkdir(parents=True,exist_ok=True)
+        base=sanitize_project_name(name) or 'Derived Sequence'
+        folder=root/base;number=2
+        while folder.exists():
+            folder=root/f'{base} {number}';number+=1
+        folder.mkdir()
+        return folder
+
+    def drop_frames_to_group(self,source_animation_id,frame_indices,group_id,name=None):
+        "Selected Timeline frames become one Derived Frame Sequence snapshot in the target Group."
+        h=self.host
+        if h.interaction_busy:return None
+        library=h.project.library
+        if group_id not in library.groups:return None
+        # Timeline order is the contract; only duplicates are dropped.
+        frames=list(dict.fromkeys(int(index) for index in frame_indices if int(index)>=0))
+        if not frames:return None
+        owner=library.animation(source_animation_id)
+        if owner is None:
+            h.status.setText(t('The source Animation is no longer in the project.'));return None
+        base=h.project
+        source=base if base.animation_id==source_animation_id else base.select_animation(source_animation_id)
+        if not source.layout or not source.source_path:
+            h.status.setText(t('Build the source Animation before creating a derived sequence.'));return None
+        directory=cache_directory(source.project_id,h.project_file,source_animation_id)
+        try:
+            provider=FinalFrameProvider(source,directory,live_edit=True)
+            frames=[index for index in frames if index<len(provider)]
+            if not frames:raise ValueError('Selected frames are outside this Animation')
+            pixels=[provider.get_final_frame(index) for index in frames]
+        except (ValueError,OSError,KeyError) as error:
+            h.status.setText(t('Cached preview unavailable: {error}',error=str(error)));return None
+        folder=self._derived_folder(h.project_file,name or owner.name)
+        for index,pixels_row in enumerate(pixels):
+            save_rgba(folder/f'frame_{index:06d}.png',pixels_row)
+        provenance={'source_animation_id':source_animation_id,'source_frame_indices':list(frames),'created_at':now_stamp()}
+        previous=base.current_group_id
+        base.current_group_id=group_id
+        try:
+            p=base.import_frame_sequence(folder,source.video.fps or base.default_fps,True,'pad')
+        finally:
+            base.current_group_id=previous
+        p.motion_settings.enabled=False
+        resource=p.library.animation(p.animation_id)
+        resource.name=unique_name(name or t('{name} Frames',name=owner.name),
+            [r.name for r in p.library.in_group(group_id) if r.kind=='ANIMATION' and r.id!=resource.id],'_')
+        resource.metadata=dict(provenance)
+        p.export_settings.animation_name=resource.name
+        source_record=p.library.resources.get(resource.source_id)
+        if source_record is not None:
+            source_record.metadata=dict(provenance)
+            source_record.name=resource.name+' Source'
+        derived_directory=cache_directory(p.project_id,h.project_file,p.animation_id)
+        from app.core.pipeline import Pipeline
+        try:
+            Pipeline(p,derived_directory).build()
+            p.library.mark_generated(p.animation_id,ready=True)
+        except (ValueError,OSError) as error:
+            h.status.setText(t('Cached preview unavailable: {error}',error=str(error)))
+        before=asdict(library)
+        h._invalidate_reviews(False)
+        h.project,h.cache_dir=p,derived_directory
+        h.project.current_group_id=group_id
+        h.project.current_character_id=p.library.groups[group_id].character_id
+        h.dirty,h.built=True,bool(resource.ready)
+        self.record(('library',before,asdict(h.project.library),previous,group_id,'Derived Frame Sequence'))
+        h._loaded()
+        self.select_animation(resource.animation_id)
+        h.status.setText(t('Created a {count}-frame derived sequence in {group}.',
+            count=len(frames),group=p.library.groups[group_id].name))
+        return resource.id
 
     def remove_character(self,ident,confirmed=False):
         lib=self.host.project.library
@@ -625,16 +752,60 @@ class LibraryController(QObject):
         return t('{groups} Groups / {animations} Animations',groups=len(lib.character_members(ident)),
             animations=lib.character_animation_count(ident))
 
-    def remove_group(self,ident,confirmed=False):
-        lib=self.host.project.library;g=lib.groups[ident]
-        contents=bool(lib.in_group(ident) or lib.children(ident))
-        if contents and g.parent_id is None:
-            MessageBox.information(self.host,'Remove Group','Group contains resources. Move them to another Group first.');return
-        if not confirmed:
-            message='Move contents to the parent Group and remove this Group?' if contents else 'Remove this empty Group?'
-            if MessageBox.question(self.host,'Remove Group',message,MessageBox.StandardButton.Yes|MessageBox.StandardButton.Cancel,MessageBox.StandardButton.Cancel)!=MessageBox.StandardButton.Yes:return
-        self.mutate(lambda tree:tree.remove_group(ident,move_to_parent=contents),'Remove Group')
-        if ident not in self.host.project.library.groups:self.select_group(g.parent_id,capture=False)
+    def remove_group(self,ident,confirmed=False,mode=None):
+        "Delete one Group; a Group with children asks before anything beyond this Group is touched."
+        h=self.host;lib=h.project.library
+        group=lib.groups.get(ident)
+        if group is None:return None
+        contents=lib.group_contents(ident)
+        children=lib.children(ident)
+        rows=lib.in_group(ident)
+        summary=t('This Group contains: {groups} child Groups, {resources} resources, {animations} Animations',
+            groups=contents['groups'],resources=contents['resources'],animations=contents['animations'])
+        if mode is None:
+            if confirmed:
+                mode='promote' if group.parent_id is not None else ('tree' if (children or rows) else 'promote')
+            elif children and group.parent_id is not None:
+                choice=MessageBox.choice(h,t('Remove Group'),summary,
+                    ('Remove the Group and Promote its Contents','Delete the Entire Group Tree','Cancel'),0)
+                if choice<0 or choice==2:return None
+                mode='promote' if choice==0 else 'tree'
+            elif group.parent_id is None and (children or rows):
+                choice=MessageBox.choice(h,t('Remove Group'),summary,('Delete the Entire Group Tree','Cancel'),1)
+                if choice!=0:return None
+                mode='tree'
+            elif rows:
+                if MessageBox.question(h,t('Remove Group'),
+                        t('Move the contents to the parent Group and remove this Group?'),
+                        MessageBox.StandardButton.Yes|MessageBox.StandardButton.Cancel,
+                        MessageBox.StandardButton.Cancel)!=MessageBox.StandardButton.Yes:return None
+                mode='promote'
+            else:
+                if MessageBox.question(h,t('Remove Group'),t('Remove this empty Group?'),
+                        MessageBox.StandardButton.Yes|MessageBox.StandardButton.Cancel,
+                        MessageBox.StandardButton.Cancel)!=MessageBox.StandardButton.Yes:return None
+                mode='promote'
+        if mode=='tree':
+            if not confirmed and MessageBox.question(h,t('Delete Group Tree'),
+                    t('Delete this Group with every child Group and resource record? Source files on disk are never deleted.'),
+                    MessageBox.StandardButton.Yes|MessageBox.StandardButton.Cancel,
+                    MessageBox.StandardButton.Cancel)!=MessageBox.StandardButton.Yes:return None
+            animations={r.animation_id for r in lib.in_group(ident,True,{'ANIMATION'})}
+            removed=self.mutate(lambda tree:tree.remove_group_tree(ident,clear_references=True,clear_sets=True,clear_machines=True),'Remove Group Tree')
+            if removed is None:return None
+            for animation_id in animations:
+                h.project.animations.pop(animation_id,None)
+                if h.project.animation_id==animation_id:
+                    h.project.animation_id='';h.project.source_video='';h.project.sequence_folder=''
+            if ident not in h.project.library.groups:
+                self.asset_id=None;self.selection=None
+                self.select_group(group.parent_id if group.parent_id in h.project.library.groups else None,capture=False)
+            return removed
+        self.mutate(lambda tree:tree.remove_group(ident,move_to_parent=bool(rows or children)),'Remove Group')
+        if ident not in h.project.library.groups:
+            self.select_group(group.parent_id if group.parent_id in h.project.library.groups else None,capture=False)
+            return ident
+        return None
 
     def history(self,redo=False):
         h=self.host
@@ -666,9 +837,27 @@ class LibraryController(QObject):
                         for key in set(a)|set(b):
                             if a.get(key)!=b.get(key):current[key]=copy.deepcopy(b.get(key))
                         data[collection][ident]=current
+            # Workspace UI state is not an edit instruction: drop selections the restored model cannot satisfy.
+            owners={row.get('animation_id'):row.get('group_id') for row in data['resources'].values()
+                if row.get('kind')=='ANIMATION'}
+            for ident,row in data['groups'].items():
+                state=row.get('ui_state') or {}
+                if state.get('animation_id') and owners.get(state['animation_id'])!=ident:
+                    row.setdefault('ui_state',{})['animation_id']=None
+                row['animation_states']={key:value for key,value in (row.get('animation_states') or {}).items()
+                    if owners.get(key)==ident}
             try:h.project.library=ProjectLibrary.from_dict(data)
             except ValueError:
                 h.status.setText(t('Move newly imported resources before undoing Group creation.'));return False
+            # Snapshots of removed Animations must never revive through ensure_library().
+            for animation_id in list(h.project.animations):
+                if h.project.library.animation(animation_id) is None:
+                    h.project.animations.pop(animation_id,None)
+            if h.project.library.animation(h.project.animation_id) is None:
+                # The undo removed the Animation this Project was showing; drop the pointer too.
+                h.project.animation_id='default'
+                h.project.source_video=''
+                h.project.sequence_folder=''
             group=new_group if redo else old_group
             self.select_group(group if group in h.project.library.groups else None,capture=False)
         self.index+=1 if redo else -1;h.dirty=True;self.refresh();h._update_state();return True
