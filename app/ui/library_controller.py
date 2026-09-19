@@ -28,7 +28,7 @@ from app.core.group_export import sheet_path
 from app.core.final_frame_provider import FinalFrameProvider
 from app.core.frame_move import (apply_frame_state, canonical_folder, copy_canonical_frames,
     copy_raster_edits, invalidate_sheet_manifest, mark_generated_stale)
-from app.core.sprite_sheet_slice import DEFAULT_FPS, SliceConfig, slice_frames
+from app.core.sprite_sheet_slice import DEFAULT_FPS, SliceConfig, calculate_cells, slice_frames
 from app.core.project_workspace import sanitize_project_name
 
 
@@ -1058,6 +1058,12 @@ class LibraryController(QObject):
         base=h.project
         try:
             pixels=to_rgba8(read_rgba(sheet_path(base,h.project_file,row)))
+            # The preview and this slice must agree: refuse a grid with cells outside the sheet.
+            layout=calculate_cells(config,pixels)
+            if layout.invalid:
+                h.status.setText(t('Cells outside the sheet: {count}',count=len(layout.invalid)));return None
+            if not layout.frames:
+                h.status.setText(t('The Sprite Sheet grid selects no frames'));return None
             resolved,frames,skipped=slice_frames(pixels,config)
         except (OSError,ValueError) as error:
             h.status.setText(t('Cannot slice the Sprite Sheet: {error}',error=str(error)));return None

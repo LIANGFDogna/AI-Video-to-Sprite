@@ -278,7 +278,7 @@ if (-not $spriteSheetVerify.WaitForExit(180000)) {
 $spriteSheetVerify.Refresh()
 if ($spriteSheetVerify.ExitCode -ne 0) { throw "Packaged Sprite Sheet restart verification failed ($($spriteSheetVerify.ExitCode)). Check logs/app.log." }
 $spriteSheetReport = Get-Content -LiteralPath (Join-Path $spriteSheetDirectory 'validation.json') -Raw | ConvertFrom-Json
-if ($spriteSheetReport.status -ne 'passed' -or -not $spriteSheetReport.restart_verified -or -not $spriteSheetReport.row_major_order -or $spriteSheetReport.frames -ne 8) { throw 'Missing Sprite Sheet slicer acceptance result.' }
+if ($spriteSheetReport.status -ne 'passed' -or -not $spriteSheetReport.restart_verified -or -not $spriteSheetReport.row_major_order -or $spriteSheetReport.frames -ne 8 -or $spriteSheetReport.real_sheet_frames -ne 8 -or $spriteSheetReport.real_sheet_timeline -ne 8 -or -not $spriteSheetReport.real_sheet_layout_matches_files) { throw 'Missing Sprite Sheet slicer acceptance result.' }
 
 $spriteInteractionReports = @()
 $spritePreviousScreenScale = $env:QT_SCREEN_SCALE_FACTORS
@@ -334,6 +334,6 @@ $spritePixelReport = Get-Content -LiteralPath (Join-Path $spritePixelDirectory '
 if ($spritePixelReport.status -ne 'passed' -or -not $spritePixelReport.restart_verified -or $spritePixelReport.canvas_trail_pixel_difference -ne 0) { throw 'Missing pixel tool acceptance result.' }
 
 $spritePathReports = & (Join-Path $PSScriptRoot 'scripts\verify_path_ui.ps1') -Executable $spriteExecutable
-$spriteReceipt = @{ status = 'passed'; build_version = '20260919-sprite-sheet-slicer'; sheet_validation = $spriteSheetReport; interaction_validation = $spriteInteractionReports; path_validation = $spritePathReports; reference_validation = $spriteReferenceReports; group_validation = $spriteGroupReport; character_validation = $spriteCharacterReport; frame_validation = $spriteFrameReport; set_validation = $spriteSetReport; machine_validation = $spriteMachineReport; pixel_validation = $spritePixelReport; editor_validation = $spriteEditorReport; executable_sha256 = (Get-FileHash -LiteralPath $spriteExecutable -Algorithm SHA256).Hash; verified_at = (Get-Date).ToString('o') }
+$spriteReceipt = @{ status = 'passed'; build_version = '20260919-sheet-slicer-auto-layout'; sheet_validation = $spriteSheetReport; interaction_validation = $spriteInteractionReports; path_validation = $spritePathReports; reference_validation = $spriteReferenceReports; group_validation = $spriteGroupReport; character_validation = $spriteCharacterReport; frame_validation = $spriteFrameReport; set_validation = $spriteSetReport; machine_validation = $spriteMachineReport; pixel_validation = $spritePixelReport; editor_validation = $spriteEditorReport; executable_sha256 = (Get-FileHash -LiteralPath $spriteExecutable -Algorithm SHA256).Hash; verified_at = (Get-Date).ToString('o') }
 $spriteReceipt | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $spriteReleaseDirectory 'release-validation.json') -Encoding UTF8
 Write-Host "Built $spriteExecutable. Video input uses FFmpeg; frame sequence input does not. All release checks passed."

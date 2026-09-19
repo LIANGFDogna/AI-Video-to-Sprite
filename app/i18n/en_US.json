@@ -1053,5 +1053,9 @@
   "Margin Top": "Margin Top",
   "Spacing X": "Spacing X",
   "Spacing Y": "Spacing Y",
-  "Frame Count": "Frame Count"
+  "Frame Count": "Frame Count",
+  "Calculate cell size from Columns and Rows": "Calculate cell size from Columns and Rows",
+  "Unused edge: {width} × {height} px": "Unused edge: {width} × {height} px",
+  "Cells outside the sheet: {count}": "Cells outside the sheet: {count}",
+  "OUT OF BOUNDS": "OUT OF BOUNDS"
 }

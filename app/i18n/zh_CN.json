@@ -1053,5 +1053,9 @@
   "Margin Top": "上边距",
   "Spacing X": "横向间隔",
   "Spacing Y": "纵向间隔",
-  "Frame Count": "帧数"
+  "Frame Count": "帧数",
+  "Calculate cell size from Columns and Rows": "根据行列自动计算单元格尺寸",
+  "Unused edge: {width} × {height} px": "未使用边缘：{width} × {height} px",
+  "Cells outside the sheet: {count}": "超出源图的单元格：{count}",
+  "OUT OF BOUNDS": "超出范围"
 }

@@ -12,7 +12,7 @@ from PySide6.QtCore import QTimer
 from app import __build__
 from app.core.final_frame_provider import FinalFrameProvider
 from app.core.project_workspace import create_project_workspace
-from app.core.sprite_sheet_slice import SliceConfig
+from app.core.sprite_sheet_slice import SliceConfig, calculate_cells
 from app.models.project import Project
 from app.utils.cache import save_rgba
 from app.utils.paths import cache_directory, frame_path
@@ -74,6 +74,17 @@ def start_sprite_sheet_smoke(app, window, output, verify=False):
     def cell_of(pixels, index):
         row, column = divmod(index, COLUMNS)
         return pixels[row * CELL_H:(row + 1) * CELL_H, column * CELL_W:(column + 1) * CELL_W]
+
+    def real_sheet_pixels(width=1772, height=887):
+        "The reported sheet: Auto Layout 4 columns x 2 rows must give 443x443 cells."
+        pixels = np.zeros((height, width, 4), np.uint8)
+        for index in range(8):
+            row, column = divmod(index, 4)
+            color = (25 + index * 24, 205 - index * 11, 65 + index * 17, 145 + index * 10)
+            offset_x, offset_y = 15 + (index % 3) * 7, 25 + (index // 3) * 11
+            pixels[row * 444 + offset_y:row * 444 + offset_y + 60,
+                   column * 443 + offset_x:column * 443 + offset_x + 40] = color
+        return pixels
 
     def group(name):
         return next(row for row in window.project.library.groups.values() if row.name == name)
@@ -254,6 +265,36 @@ def start_sprite_sheet_smoke(app, window, output, verify=False):
                     return
                 assert window.project.select_animation(state['animation']).frame_correction(5) == (6, -4)
                 report['frame_correction_editable'] = True
+                window.project.save(window.project_file)
+                advance('real_sheet')
+            elif phase == 'real_sheet':
+                # Reported case: 1772x887, Columns 4, Rows 2 -> Cell 443x443, 8 frames.
+                state['real_pixels'] = real_sheet_pixels()
+                state['real_path'] = output / 'SkillSlashReal.png'
+                Image.fromarray(state['real_pixels']).save(state['real_path'])
+                state['real_group'] = controller.new_group(name='SkillReal').id
+                controller.select_group(state['real_group'])
+                resource = controller.import_sheet(str(state['real_path']))
+                assert resource is not None
+                assert controller.slice_sprite_sheet(state['real_group'] and resource.id,
+                                                     SliceConfig(columns=4, rows=2, fps=FPS, loop=True)) is not None
+                advance('real_sheet_check')
+            elif phase == 'real_sheet_check':
+                animation_id = animation_of(state['real_group'])
+                animation = window.project.select_animation(animation_id)
+                layout = calculate_cells(SliceConfig(columns=4, rows=2), state['real_pixels'])
+                report['real_sheet_frames'] = int(animation.video.frame_count)
+                report['real_sheet_timeline'] = len(animation.timeline_edit.timeline_clips)
+                report['real_sheet_cell'] = [layout.config.cell_width, layout.config.cell_height]
+                report['real_sheet_spacing_y'] = int(layout.config.spacing_y)
+                report['real_sheet_layout_matches_files'] = bool(all(
+                    np.array_equal(sliced_file(animation_id, index),
+                                   state['real_pixels'][cell.y:cell.y + cell.height, cell.x:cell.x + cell.width])
+                    for index, cell in enumerate(layout.frames)))
+                assert report['real_sheet_frames'] == 8, report['real_sheet_frames']
+                assert report['real_sheet_timeline'] == 8, report['real_sheet_timeline']
+                assert report['real_sheet_cell'] == [443, 443], report['real_sheet_cell']
+                assert report['real_sheet_layout_matches_files']
                 window.project.save(window.project_file)
                 report.update(status='passed', saved_project=str(window.project_file))
                 finish(0)

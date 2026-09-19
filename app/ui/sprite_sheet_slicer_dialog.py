@@ -1,11 +1,16 @@
-"""Sprite Sheet Slicer: live fixed-cell grid preview shared by both menu entries."""
+"""Sprite Sheet Slicer: live fixed-cell grid preview shared by both menu entries.
+
+The dialog never keeps a semi-automatic Cell Size: Auto Layout recomputes the Cell Size from
+Columns, Rows, Margin and Spacing on every change, and the preview, the summary and the
+created Animation all read the same calculate_cells() result.
+"""
 import numpy as np
 from PySide6.QtCore import QPointF, QRectF, QSizeF, Qt
 from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPen
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFormLayout, QHBoxLayout,
-    QLabel, QPushButton, QSpinBox, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QAbstractSpinBox, QCheckBox, QComboBox, QDialog, QDoubleSpinBox,
+    QFormLayout, QHBoxLayout, QLabel, QPushButton, QSpinBox, QVBoxLayout, QWidget)
 
-from app.core.sprite_sheet_slice import DEFAULT_FPS, SliceConfig, detect_grid
+from app.core.sprite_sheet_slice import DEFAULT_FPS, SliceConfig, calculate_cells, detect_grid
 from app.i18n import t
 
 
@@ -16,8 +21,7 @@ class SheetPreview(QWidget):
         super().__init__(parent)
         self.setMinimumSize(380, 380)
         self.image = QImage()
-        self.rects = []
-        self.skipped = set()
+        self.layout_result = None
 
     def set_sheet(self, pixels):
         data = np.ascontiguousarray(pixels)
@@ -25,9 +29,8 @@ class SheetPreview(QWidget):
         self.image = QImage(data.data, width, height, data.strides[0], QImage.Format.Format_RGBA8888).copy()
         self.update()
 
-    def set_grid(self, rects, skipped=()):
-        self.rects = list(rects)
-        self.skipped = set(skipped)
+    def set_layout(self, layout):
+        self.layout_result = layout
         self.update()
 
     def scale_factor(self):
@@ -49,12 +52,24 @@ class SheetPreview(QWidget):
         font = QFont()
         font.setPixelSize(11)
         painter.setFont(font)
-        for index, (x, y, cell_width, cell_height) in enumerate(self.rects):
-            rect = QRectF(origin.x() + x * factor, origin.y() + y * factor, cell_width * factor, cell_height * factor)
-            skipped = index in self.skipped
-            painter.setPen(QPen(QColor('#6b7787' if skipped else '#8fd3ff'), 1, Qt.PenStyle.DashLine if skipped else Qt.PenStyle.SolidLine))
+        layout = self.layout_result
+        cells = layout.cells if layout is not None else []
+        for cell in cells:
+            rect = QRectF(origin.x() + cell.x * factor, origin.y() + cell.y * factor,
+                          cell.width * factor, cell.height * factor)
+            if not cell.valid:
+                painter.setPen(QPen(QColor('#ff6b6b'), 2))
+                painter.drawRect(rect)
+                painter.drawLine(rect.topLeft(), rect.bottomRight())
+                painter.setPen(QColor('#ffb3b3'))
+                painter.drawText(rect.adjusted(3, 2, -3, -3),
+                                 Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft, t('OUT OF BOUNDS'))
+                continue
+            skipped = cell.skipped
+            painter.setPen(QPen(QColor('#6b7787' if skipped else '#8fd3ff'), 1,
+                                Qt.PenStyle.DashLine if skipped else Qt.PenStyle.SolidLine))
             painter.drawRect(rect)
-            label = t('skipped') if skipped else str(index)
+            label = t('skipped') if skipped else str(cell.frame_index if cell.frame_index is not None else cell.index)
             painter.setPen(QColor('#e8f2ff'))
             painter.drawText(rect.adjusted(3, 2, -3, -3), Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft, label)
 
@@ -68,9 +83,10 @@ class SpriteSheetSlicerDialog(QDialog):
         self.name = name
         self.pixels = np.asarray(pixels)
         self.result_config = None
+        self.result_layout = None
         self.mode = mode
         self.setWindowTitle(t('Slice Sprite Sheet'))
-        self.resize(1080, 720)
+        self.resize(1120, 760)
         base = config or SliceConfig()
         self.preview = SheetPreview()
         self.preview.set_sheet(self.pixels)
@@ -85,6 +101,9 @@ class SpriteSheetSlicerDialog(QDialog):
         left.addWidget(self.summary)
         layout.addLayout(left, 3)
         right = QVBoxLayout()
+        self.auto_layout = QCheckBox(t('Calculate cell size from Columns and Rows'))
+        self.auto_layout.setChecked(bool(base.auto_layout))
+        right.addWidget(self.auto_layout)
         self.columns = self.spin(1, 4096, base.columns)
         self.rows = self.spin(1, 4096, base.rows)
         resolved = base.resolved(self.size_hint())
@@ -124,21 +143,24 @@ class SpriteSheetSlicerDialog(QDialog):
         right.addStretch(1)
         row = QHBoxLayout()
         row.addWidget(self.button('Cancel', self.reject))
-        row.addWidget(self.button('Create Animation', self.accept, primary=True))
+        self.create_button = self.button('Create Animation', self.accept, primary=True)
+        row.addWidget(self.create_button)
         right.addLayout(row)
         layout.addLayout(right, 2)
+        self.auto_layout.toggled.connect(self._auto_toggled)
         for widget in (self.columns, self.rows, self.cell_width, self.cell_height, self.margin_left,
                        self.margin_top, self.spacing_x, self.spacing_y, self.frame_count):
             widget.valueChanged.connect(self.update_preview)
         self.order.currentIndexChanged.connect(self.update_preview)
         self.ignore_empty.toggled.connect(self.update_preview)
-        self.update_preview()
+        self._auto_toggled()
 
     # ------------------------------------------------------------------ helpers
     def spin(self, low, high, value):
         widget = QSpinBox()
         widget.setRange(low, high)
         widget.setValue(int(value))
+        widget.setKeyboardTracking(True)
         return widget
 
     def button(self, label, callback, primary=False):
@@ -165,35 +187,58 @@ class SpriteSheetSlicerDialog(QDialog):
                            spacing_x=self.spacing_x.value(), spacing_y=self.spacing_y.value(),
                            frame_count=self.frame_count.value(), frame_order=self.order.currentData(),
                            fps=self.fps.value(), loop=self.loop.isChecked(),
-                           ignore_empty=self.ignore_empty.isChecked())
+                           ignore_empty=self.ignore_empty.isChecked(),
+                           auto_layout=self.auto_layout.isChecked())
 
-    def empty_cells(self, rects):
-        alpha = self.pixels[..., 3]
-        return {index for index, (x, y, width, height) in enumerate(rects) if not alpha[y:y + height, x:x + width].any()}
+    def _auto_toggled(self, *args):
+        "Auto Layout owns the Cell Size; Manual Layout hands it back to the user."
+        automatic = self.auto_layout.isChecked()
+        for widget in (self.cell_width, self.cell_height):
+            widget.setReadOnly(automatic)
+            widget.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons if automatic
+                                    else QAbstractSpinBox.ButtonSymbols.UpDownArrows)
+        self.update_preview()
 
     def update_preview(self, *args):
         try:
-            config = self.config()
-            resolved, rects = config.cells(self.size_hint())
+            layout = calculate_cells(self.config(), self.pixels)
         except ValueError as error:
+            self.result_layout = None
+            self.preview.set_layout(None)
             self.summary.setText(str(error))
-            self.preview.set_grid([])
+            self.create_button.setEnabled(False)
             return
-        empty = self.empty_cells(rects)
-        skipped = empty if config.ignore_empty else set()
-        self.preview.set_grid(rects, skipped)
-        frames = len(rects) - len(skipped)
+        self.result_layout = layout
+        if self.auto_layout.isChecked():
+            for widget, value in ((self.cell_width, layout.config.cell_width),
+                                  (self.cell_height, layout.config.cell_height),
+                                  (self.spacing_x, layout.config.spacing_x),
+                                  (self.spacing_y, layout.config.spacing_y)):
+                if widget.value() != int(value):
+                    widget.blockSignals(True)
+                    widget.setValue(int(value))
+                    widget.blockSignals(False)
+        self.preview.set_layout(layout)
+        frames = layout.frame_count
         duration = frames / max(.1, self.fps.value())
-        self.summary.setText(t('{frames} frames · Cell {width}×{height} · {fps:g} FPS · {duration:.2f}s',
-                               frames=frames, width=resolved.cell_width, height=resolved.cell_height,
-                               fps=self.fps.value(), duration=duration)
-                               + ('\n' + t('Ignored empty cells: {count}', count=len(skipped)) if skipped else ''))
+        lines = [t('{frames} frames · Cell {width}×{height} · {fps:g} FPS · {duration:.2f}s',
+                   frames=frames, width=layout.config.cell_width, height=layout.config.cell_height,
+                   fps=self.fps.value(), duration=duration)]
+        if layout.unused:
+            lines.append(t('Unused edge: {width} × {height} px', width=layout.remainder[0], height=layout.remainder[1]))
+        if layout.skipped:
+            lines.append(t('Ignored empty cells: {count}', count=len(layout.skipped)))
+        if layout.invalid:
+            lines.append(t('Cells outside the sheet: {count}', count=len(layout.invalid)))
+        self.summary.setText('\n'.join(lines))
+        self.create_button.setEnabled(not layout.invalid and frames > 0)
 
     def auto_detect(self):
         guess = detect_grid(self.pixels)
         if guess is None:
             self.summary.setText(t('No transparent separator lines were found; keep the manual grid.'))
             return
+        self.auto_layout.setChecked(False)
         for widget, value in ((self.columns, guess.columns), (self.rows, guess.rows),
                               (self.cell_width, guess.cell_width), (self.cell_height, guess.cell_height),
                               (self.margin_left, guess.margin_left), (self.margin_top, guess.margin_top)):
@@ -202,9 +247,16 @@ class SpriteSheetSlicerDialog(QDialog):
 
     def accept(self):
         try:
-            config = self.config().validate()
+            layout = calculate_cells(self.config(), self.pixels)
         except ValueError as error:
             self.summary.setText(str(error))
             return
-        self.result_config = config
+        if layout.invalid:
+            self.summary.setText(t('Cells outside the sheet: {count}', count=len(layout.invalid)))
+            return
+        if not layout.frames:
+            self.summary.setText(t('The Sprite Sheet grid selects no frames'))
+            return
+        self.result_layout = layout
+        self.result_config = layout.config
         super().accept()
