@@ -1,7 +1,7 @@
 """Persistent project hierarchy and the single media Add entry point."""
 import json
 from PySide6.QtCore import Qt, QMimeData, QTimer
-from PySide6.QtGui import QDrag, QColor, QPainter, QPen, QBrush
+from PySide6.QtGui import QColor, QPainter, QPen, QBrush
 from PySide6.QtWidgets import (QWidget,QVBoxLayout,QHBoxLayout,QLineEdit,QLabel,QPushButton,
     QTreeWidget,QTreeWidgetItem,QMenu,QAbstractItemView,QInputDialog,QStyle)
 from app.i18n import t
@@ -33,13 +33,15 @@ class LibraryTree(QTreeWidget):
         super().__init__(panel);self.panel=panel
         self.frame_drop_target=None
         self.drop_zone=None
+        self.internal_drag=None
         self.setColumnCount(2);self.setHeaderLabels([t('Project Library'),t('Animations')])
         # One custom indicator: Qt's own On/Above/Below position is unreliable on nested rows.
         self.setDropIndicatorShown(False)
         self.setColumnWidth(0,225);self.setColumnWidth(1,75)
         self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.setDragEnabled(True);self.setAcceptDrops(True);self.setDropIndicatorShown(True)
-        self.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
+        # Drop-only: library drags run through the in-app controller, never Qt's native QDrag.
+        self.setDragDropMode(QAbstractItemView.DragDropMode.DropOnly)
         self.setDefaultDropAction(Qt.DropAction.MoveAction)
         self.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -47,11 +49,68 @@ class LibraryTree(QTreeWidget):
         self.currentItemChanged.connect(lambda item,old:panel.activate(item))
 
     def startDrag(self,actions):
-        item=self.currentItem()
-        if not item or item.data(0,ROLE)[0]=='PROJECT' or self.panel.host.interaction_busy:return
-        kind,ident=item.data(0,ROLE)
-        mime=QMimeData();mime.setData(MIME,json.dumps([kind,ident]).encode())
-        drag=QDrag(self);drag.setMimeData(mime);drag.exec(Qt.DropAction.MoveAction)
+        "Native QDrag is never used: Windows leaves a translucent drag window behind it."
+        return
+
+    def mousePressEvent(self,event):
+        if event.button()==Qt.MouseButton.LeftButton and not self.panel.host.interaction_busy:
+            item=self.itemAt(event.position().toPoint())
+            if item is not None:
+                kind,ident=item.data(0,ROLE)
+                if kind not in ('PROJECT',None):
+                    self.internal_drag={'kind':kind,'ident':ident,'origin':event.position().toPoint(),'active':False}
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self,event):
+        drag=self.internal_drag
+        if drag is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            if not drag['active'] and (event.position().toPoint()-drag['origin']).manhattanLength()>=8:
+                drag['active']=True
+                self.grabMouse()
+            if drag['active']:
+                kind,ident,zone=self.drop_target(event.position().toPoint())
+                allowed=self.can_drop(drag['kind'],drag['ident'],kind,ident,zone)
+                self._set_drop_zone((kind,ident,zone) if allowed else None)
+                event.accept()
+                return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self,event):
+        drag=self.internal_drag
+        self.internal_drag=None
+        if drag is not None and drag['active']:
+            self.releaseMouse()
+            zone=self.drop_zone
+            self._set_drop_zone(None)
+            event.accept()
+            if zone is not None:
+                self.perform_drop(drag['kind'],drag['ident'],zone[0],zone[1],zone[2])
+            return
+        super().mouseReleaseEvent(event)
+
+    def perform_drop(self,dragged_kind,dragged_id,kind,ident,zone):
+        "The single place a Project Library drop runs; external and internal drags share it."
+        control=self.panel.controller
+        lib=self.panel.host.project.library;index=None
+        if not self.can_drop(dragged_kind,dragged_id,kind,ident,zone):return False
+        adjacent=zone in ('above','below')
+        if dragged_kind=='GROUP':
+            if kind=='CHARACTER':
+                control.drop_group_on_character(dragged_id,ident);return True
+            if kind in ('LOOSE','CHARACTERS'):
+                control.drop_group_on_character(dragged_id,None);return True
+            if kind=='GROUP' and adjacent:
+                target=lib.groups[ident].parent_id
+                siblings=lib.ordered_children(target,lib.groups[ident].character_id)
+                index=next(i for i,g in enumerate(siblings) if g.id==ident)+(zone=='below')
+            else:target=ident if kind=='GROUP' else None
+        else:
+            target=ident if kind=='GROUP' else lib.resources[ident].group_id
+            if kind=='RESOURCE' and adjacent:
+                rows=lib.in_group(target);index=next(i for i,r in enumerate(rows) if r.id==ident)+(zone=='below')
+        index=reorder_index(lib,dragged_kind,dragged_id,target,index)
+        control.move(dragged_kind,dragged_id,target,index)
+        return True
 
     def drop_target(self,point):
         "One Group row has three drop zones: above, on (nest) and below."
@@ -155,7 +214,7 @@ class LibraryTree(QTreeWidget):
             payload=json.loads(bytes(event.mimeData().data(FRAME_MIME)))
             source=payload.get('animation_id');frames=payload.get('frames') or []
             # Building the snapshot rebuilds the tree: never do that inside Qt's drop event.
-            QTimer.singleShot(0,lambda:control.drop_frames_to_group(source,frames,ident))
+            QTimer.singleShot(0,lambda:control.move_selected_frames(source,frames,ident))
             event.acceptProposedAction()
             return
         if event.mimeData().hasUrls():
@@ -165,24 +224,8 @@ class LibraryTree(QTreeWidget):
             return
         if not event.mimeData().hasFormat(MIME):event.ignore();return
         dragged_kind,dragged_id=json.loads(bytes(event.mimeData().data(MIME)))
-        lib=self.panel.host.project.library;index=None
-        if not self.can_drop(dragged_kind,dragged_id,kind,ident,zone):event.ignore();return
-        adjacent=zone in ('above','below')
-        if dragged_kind=='GROUP':
-            if kind=='CHARACTER':
-                control.drop_group_on_character(dragged_id,ident);event.acceptProposedAction();return
-            if kind in ('LOOSE','CHARACTERS'):
-                control.drop_group_on_character(dragged_id,None);event.acceptProposedAction();return
-            if kind=='GROUP' and adjacent:
-                target=lib.groups[ident].parent_id
-                siblings=lib.ordered_children(target,lib.groups[ident].character_id);index=next(i for i,g in enumerate(siblings) if g.id==ident)+(zone=='below')
-            else:target=ident if kind=='GROUP' else None
-        else:
-            target=ident if kind=='GROUP' else lib.resources[ident].group_id
-            if kind=='RESOURCE' and adjacent:
-                rows=lib.in_group(target);index=next(i for i,r in enumerate(rows) if r.id==ident)+(zone=='below')
-        index=reorder_index(lib,dragged_kind,dragged_id,target,index)
-        control.move(dragged_kind,dragged_id,target,index);event.acceptProposedAction()
+        if self.perform_drop(dragged_kind,dragged_id,kind,ident,zone):event.acceptProposedAction()
+        else:event.ignore()
 
 
 class ProjectLibraryPanel(QWidget):
@@ -326,8 +369,19 @@ class ProjectLibraryPanel(QWidget):
             action('Remove Group',lambda:c.remove_group(ident))
             action('Export Group',lambda:(c.select_group(ident),c.export_groups()))
         else:
+            resource=h.project.library.resources[ident]
+            if resource.kind in ('SOURCE_SPRITE_SHEET','GENERATED_SPRITE_SHEET'):
+                generated=resource.kind=='GENERATED_SPRITE_SHEET'
+                action('Preview Sprite Sheet',lambda:c.preview_sprite_sheet(ident))
+                if generated:
+                    action('Rebuild as a New Animation…',lambda:c.open_sprite_sheet_slicer(ident,force_new=True))
+                else:
+                    action('Slice Sprite Sheet…',lambda:c.open_sprite_sheet_slicer(ident))
+                    action('Create Animation from Sprite Sheet…',lambda:c.open_sprite_sheet_slicer(ident))
+                    if resource.metadata.get('sliced_animation'):
+                        action('Re-slice…',lambda:c.open_sprite_sheet_slicer(ident))
             action('Rename',lambda:c.rename(kind,ident))
-            if h.project.library.resources[ident].kind in ('ANIMATION','GENERATED_SPRITE_SHEET'):
+            if resource.kind in ('ANIMATION','GENERATED_SPRITE_SHEET'):
                 action('Export',lambda:c.export_animation(ident))
             action('Show in Explorer',lambda:c.reveal_resource(ident))
             action('Remove from Project',lambda:c.remove_resource(ident))

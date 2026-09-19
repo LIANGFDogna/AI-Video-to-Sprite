@@ -2,9 +2,10 @@
 import copy
 from dataclasses import asdict
 from bisect import bisect_right
+import time
 import numpy as np
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QColor, QKeySequence, QPixmap, QShortcut
+from PySide6.QtCore import Qt, QPointF, QTimer
+from PySide6.QtGui import QColor, QImage, QKeySequence, QPainter, QPen, QPixmap, QShortcut
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QPushButton,
     QSplitter, QStackedWidget, QTabWidget, QScrollArea, QListWidget, QTreeWidget, QTreeWidgetItem,
     QComboBox, QDoubleSpinBox, QSpinBox, QCheckBox, QGroupBox, QRadioButton, QGridLayout, QHeaderView,
@@ -158,6 +159,7 @@ class FrameEditor(QWidget):
         self.timeline = EditorTimeline()
         self.timeline.selection_changed.connect(self._selection_changed)
         self.timeline.frame_menu_requested.connect(self.frame_context_menu)
+        self.timeline.frames_dropped.connect(self.drop_frames_on_group)
         self.timeline.time_selected.connect(self.select_time)
         self.timeline.blocks_moved.connect(self.move_blocks)
         self.timeline.action.connect(self.action)
@@ -389,6 +391,7 @@ class FrameEditor(QWidget):
         # The Ghost checkbox is owned by _sync_ghost(); the other reference controls follow the Reference.
         for control in (self.show_reference,self.show_reference_ground,self.show_reference_axes,self.reference_opacity):control.setEnabled(bool(reference))
         self.timeline.animation_id=p.animation_id
+        self.timeline.drop_target_widget=getattr(getattr(self.host,'library_panel',None),'tree',None)
         self.timeline.set_edit(e,p.video.fps,self.selected_ids)
         saved=self._saved_frame_reference()
         self._frame_reference=saved if saved and str(saved.get('animation_id',''))==p.animation_id else None
@@ -577,6 +580,11 @@ class FrameEditor(QWidget):
         if not self.provider or not len(self.provider):return None
         return int(self.provider.project.final_timing[self.index]['source_index'])
 
+    def drop_frames_on_group(self,animation_id,frame_indices,group_id):
+        "Timeline frames move into the Group; the controller refreshes the whole window."
+        if not frame_indices or not group_id:return None
+        return self.host.library_controller.move_selected_frames(animation_id,list(frame_indices),group_id)
+
     def frame_context_menu(self,source_index,global_pos):
         "Timeline frame menu; this is not the Character Coordinate Reference."
         if self.host.interaction_busy:return
@@ -610,23 +618,77 @@ class FrameEditor(QWidget):
         self.stroke_size=int(self.brush_size.value())
         self.stroke_was_eraser=self.canvas.tool=='eraser'
         self.stroke_last=None
+        self.stroke_timings=[]
+        self.canvas.begin_stroke_preview(self.working_buffer())
         self.stroke_point(x,y)
+
+    def working_buffer(self):
+        "A detached copy of the pixels on screen: the stroke is painted here only."
+        pixels=getattr(self,'last_pixels',None)
+        if pixels is None:return QImage()
+        data=np.ascontiguousarray(pixels)
+        height,width=data.shape[:2]
+        return QImage(data.data,width,height,data.strides[0],QImage.Format.Format_RGBA8888).copy()
+
+    def preview_dirty_rect(self,x0,y0,x1,y1,scale,dx,dy):
+        reach=self.stroke_size*max(scale,1.)/2.+2.
+        left=min(x0,x1)*scale+dx-reach
+        top=min(y0,y1)*scale+dy-reach
+        right=max(x0,x1)*scale+dx+reach
+        bottom=max(y0,y1)*scale+dy+reach
+        return (left,top,right-left,bottom-top)
+
+    def paint_preview(self,previous,x,y,tool):
+        "Only the working buffer and one dirty rect are touched between mouse moves."
+        image=self.canvas.stroke_item.image()
+        if image.isNull():return
+        scale,dx,dy=self.stroke_chain
+        start=previous if previous is not None else (x,y)
+        painter=QPainter(image)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing,False)
+        pen=QPen(QColor(*self.brush_color),max(1.,self.stroke_size*max(scale,1.)))
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        if tool=='eraser':
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
+        start_point=QPointF(start[0]*scale+dx,start[1]*scale+dy)
+        end_point=QPointF(x*scale+dx,y*scale+dy)
+        if start_point==end_point:
+            # A zero-length line paints nothing; one round dot is the first stamp.
+            painter.drawPoint(start_point)
+        else:
+            painter.drawLine(start_point,end_point)
+        painter.end()
+        self.canvas.update_stroke_preview(self.preview_dirty_rect(start[0],start[1],x,y,scale,dx,dy))
 
     def stroke_point(self,x,y):
         if self.stroke is None:return
+        started=time.perf_counter()
         fx,fy=canvas_to_frame(self.stroke_chain,x,y)
         tool='eraser' if self.stroke_was_eraser else 'pencil'
-        if self.stroke_last is None:
+        previous=self.stroke_last
+        if previous is None:
             self.stroke.dot(fx,fy,tool,self.stroke_size,self.brush_color)
         else:
-            self.stroke.segment(self.stroke_last[0],self.stroke_last[1],fx,fy,tool,self.stroke_size,self.brush_color)
+            self.stroke.segment(previous[0],previous[1],fx,fy,tool,self.stroke_size,self.brush_color)
         self.stroke_last=(fx,fy)
-        self.request_preview()
+        self.paint_preview(previous,fx,fy,tool)
+        self.stroke_timings.append((time.perf_counter()-started)*1000.)
+
+    def stroke_performance(self):
+        "Median and p95 of the mouse-move UI update; the disk commit is never counted."
+        values=sorted(getattr(self,'stroke_timings',[]) or [])
+        if not values:return {'count':0,'median_ms':0.,'p95_ms':0.}
+        median=values[len(values)//2]
+        index=min(len(values)-1,max(0,int(round(len(values)*.95))-1))
+        return {'count':len(values),'median_ms':round(median,3),'p95_ms':round(values[index],3)}
 
     def finish_stroke(self):
         "One press -> moves -> release is exactly one revision and one undo command."
         stroke=self.stroke
         self.stroke=None;self.stroke_last=None
+        self.canvas.end_stroke_preview()
         if stroke is None or not stroke.changed:
             self.request_preview();return
         row=self.host.project.raster_edit(stroke.animation_id,stroke.frame_index)
@@ -639,6 +701,7 @@ class FrameEditor(QWidget):
 
     def cancel_stroke(self):
         self.stroke=None;self.stroke_last=None
+        self.canvas.end_stroke_preview()
         self.request_preview()
 
     def pending_stroke_layers(self):
@@ -784,6 +847,9 @@ class FrameEditor(QWidget):
         self.debounce.start(0 if self.timer.isActive() else 25)
 
     def _start_preview(self):
+        if self.stroke is not None:
+            self.pending=True
+            return  # an unfinished stroke owns the canvas; the commit will re-render once
         if self.worker or self.host.current_animation_busy:
             return  # keep pending: _finished() reschedules once the running preview completes
         if not self.provider or not len(self.provider):

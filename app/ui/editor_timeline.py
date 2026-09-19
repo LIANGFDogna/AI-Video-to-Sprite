@@ -13,6 +13,7 @@ class EditorTimeline(QGraphicsView):
     blocks_moved = Signal(object, float, str)
     action = Signal(str)
     frame_menu_requested = Signal(int, object)
+    frames_dropped = Signal(object, object, str)
     label_width = 80
     row_height = 54
     ruler_height = 28
@@ -39,6 +40,10 @@ class EditorTimeline(QGraphicsView):
         self.animation_id = ""
         self.reference_index = None
         self.frame_drag_active = False
+        self.frame_drag_payload_data = None
+        self.frame_drag_point = None
+        self.frame_drop_target = None
+        self.drop_target_widget = None
         # Block drags move items; minimal viewport updates would leave trails behind them.
         self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.BoundingRectViewportUpdate)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -47,6 +52,11 @@ class EditorTimeline(QGraphicsView):
 
     def ids(self):
         return [i for i, item in self.items_by_id.items() if item.isSelected()]
+
+    def row_layout_height(self):
+        "Pixel height of the track rows, used by tests and by the drop feedback."
+        rows = len(self.edit.track_layout) if self.edit else 1
+        return rows * self.row_height
 
     def set_edit(self, edit, fps, selected=None):
         self.rebuilding = True
@@ -85,29 +95,20 @@ class EditorTimeline(QGraphicsView):
         self.viewport().update()
 
     def _clear_selection_overlay(self):
-        if self.rubber is not None:
-            if self.rubber.scene() is self.scene():
-                self.scene().removeItem(self.rubber)
-            self.rubber = None
         self.selecting = None
+        self.rubber = None
         self.viewport().update()
 
     def _start_selection(self, position):
+        "The rubber band is painted by drawForeground, so it can never be covered by a cell."
         self.selecting = position
-        if self.rubber is None:
-            self.rubber = QGraphicsRectItem(QRectF(position, position))
-            self.rubber.setPen(QPen(QColor('#8fd3ff'), 1, Qt.PenStyle.DashLine))
-            self.rubber.setBrush(QBrush(QColor(143, 211, 255, 40)))
-            self.rubber.setZValue(50)
-            self.rubber.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
-            self.scene().addItem(self.rubber)
-        else:
-            self.rubber.setRect(QRectF(position, position))
-            self.rubber.setVisible(True)
+        self.rubber = QRectF(position, position)
+        self.viewport().update()
 
     def _update_selection(self, position):
         if self.rubber is not None and self.selecting is not None:
-            self.rubber.setRect(QRectF(self.selecting, position).normalized())
+            self.rubber = QRectF(self.selecting, position).normalized()
+            self.viewport().update()
 
     def _finish_selection(self, position):
         rect = QRectF(self.selecting, position).normalized() if self.selecting is not None else None
@@ -120,7 +121,9 @@ class EditorTimeline(QGraphicsView):
 
     def cancel_active_interaction(self):
         "Remove the selection overlay and any uncommitted block drag."
-        changed = self.selecting is not None or self.rubber is not None or self.drag is not None or self.scrubbing
+        if self.frame_drag_active:
+            self.cancel_frame_drag()
+        changed = self.selecting is not None or self.drag is not None or self.scrubbing
         if self.drag:
             self.drag = None
             for item in self.items_by_id.values():
@@ -194,16 +197,19 @@ class EditorTimeline(QGraphicsView):
             if delta.manhattanLength() > 5:
                 self.drag = (origin,start,track,True)
                 for ident in self.ids(): self.items_by_id[ident].setPos(delta.x(), delta.y())
-            if self._outside(event) and not self.frame_drag_active:
-                self.frame_drag_active = True
-                try:
-                    self._begin_frame_drag()
-                finally:
-                    self.frame_drag_active = False
+            if self.frame_drag_active:
+                self.update_frame_drag(event.globalPosition().toPoint())
+                return
+            if self._outside(event) and self.start_frame_drag():
+                return
             return
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        if self.frame_drag_active:
+            self.finish_frame_drag(commit=True)
+            event.accept()
+            return
         if self.selecting is not None:
             self._finish_selection(self.mapToScene(event.position().toPoint()))
             event.accept(); return
@@ -233,46 +239,71 @@ class EditorTimeline(QGraphicsView):
         if frame is not None:
             self.frame_menu_requested.emit(frame.source_index, self.viewport().mapToGlobal(point))
 
-    def _drag_label(self, label):
-        "A light text label; the Timeline is never snapshotted into a drag pixmap."
-        font = QFont()
-        font.setPixelSize(12)
-        width = max(48, QFontMetrics(font).horizontalAdvance(label) + 18)
-        pixmap = QPixmap(width, 24)
-        pixmap.fill(Qt.GlobalColor.transparent)
-        painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setBrush(QBrush(QColor(35, 44, 58, 220)))
-        painter.setPen(QPen(QColor('#8fd3ff')))
-        painter.drawRoundedRect(.5, .5, width - 1, 23, 4, 4)
-        painter.setPen(QColor('#e8f2ff'))
-        painter.setFont(font)
-        painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, label)
-        painter.end()
-        return pixmap
-
-    def _begin_frame_drag(self):
-        "Hand the selected frames to the Project Library as a derived sequence request."
+    def frame_drag_payload(self):
+        "Selected frames in Timeline order for the in-app drag controller."
         selected = self.edit.selected(self.ids(), editable=False) if self.edit else []
         if not selected:
-            return False
+            return None
         ordered = sorted(selected, key=lambda frame: (frame.start, frame.id))
-        label = t('{count} Frames', count=len(ordered))
-        payload = {'animation_id': self.animation_id, 'frames': [frame.source_index for frame in ordered], 'label': label}
-        mime = QMimeData()
-        mime.setData(FRAME_MIME, json.dumps(payload).encode())
-        drag = QDrag(self)
-        drag.setMimeData(mime)
-        pixmap = self._drag_label(label)
-        drag.setPixmap(pixmap)
-        drag.setHotSpot(pixmap.rect().center())
+        return {'animation_id': self.animation_id,
+                'frames': [frame.source_index for frame in ordered],
+                'label': t('{count} Frames', count=len(ordered))}
+
+    def start_frame_drag(self):
+        "Internal drag: no QDrag, no native drag window, no DWM drag preview."
+        payload = self.frame_drag_payload()
+        if payload is None:
+            return False
         self.drag = None
         for item in self.items_by_id.values():
             item.setPos(0, 0)
-        self.viewport().update()
-        drag.exec(Qt.DropAction.CopyAction)
+        self.frame_drag_active = True
+        self.frame_drag_payload_data = payload
+        self.frame_drag_point = None
+        self.frame_drop_target = None
+        self.grabMouse()
         self.viewport().update()
         return True
+
+    def update_frame_drag(self, global_point):
+        "Hit-test the Project Library with the global cursor position."
+        self.frame_drag_point = global_point
+        tree = getattr(self, 'drop_target_widget', None)
+        target = None
+        if tree is not None:
+            local = tree.viewport().mapFromGlobal(global_point)
+            if tree.viewport().rect().contains(local):
+                kind, ident, zone = tree.drop_target(local)
+                if kind == 'GROUP':
+                    target = ident
+            tree._set_frame_target(target)
+        self.frame_drop_target = target
+        self.viewport().update()
+        return target
+
+    def finish_frame_drag(self, commit=True):
+        "Release commits exactly one frame move; nothing native was ever shown."
+        try:
+            self.releaseMouse()
+        except RuntimeError:
+            pass
+        self.frame_drag_active = False
+        payload = getattr(self, 'frame_drag_payload_data', None)
+        target = getattr(self, 'frame_drop_target', None)
+        tree = getattr(self, 'drop_target_widget', None)
+        if tree is not None:
+            tree._set_frame_target(None)
+        self.frame_drop_target = None
+        self.frame_drag_payload_data = None
+        self.frame_drag_point = None
+        self.viewport().update()
+        if commit and payload and target:
+            self.frames_dropped.emit(payload['animation_id'], payload['frames'], target)
+            return True
+        return False
+
+    def cancel_frame_drag(self):
+        return self.finish_frame_drag(commit=False)
 
     def zoom(self, factor):
         self.pixels_per_second = max(60.,min(8000.,self.pixels_per_second*factor))
@@ -320,6 +351,25 @@ class EditorTimeline(QGraphicsView):
             painter.setPen(QPen(QColor('#d0fff1'),2))
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRect(item.mapRectToScene(item.rect()))
+        if self.rubber is not None:
+            # Topmost overlay: independent of any scene item Z-order.
+            painter.setPen(QPen(QColor('#8fd3ff'),1,Qt.PenStyle.DashLine))
+            painter.setBrush(QBrush(QColor(143,211,255,40)))
+            painter.drawRect(self.rubber)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+        if self.frame_drag_active and self.frame_drag_point is not None:
+            label=(getattr(self,'frame_drag_payload_data',None) or {}).get('label','')
+            if label:
+                scene_point=self.mapToScene(self.viewport().mapFromGlobal(self.frame_drag_point))
+                font=QFont();font.setPixelSize(12);painter.setFont(font)
+                metrics=QFontMetrics(font)
+                width=metrics.horizontalAdvance(label)+16
+                box=QRectF(scene_point.x()+12,scene_point.y()-30,width,22)
+                painter.setBrush(QBrush(QColor(35,44,58,220)))
+                painter.setPen(QPen(QColor('#8fd3ff')))
+                painter.drawRoundedRect(box,4,4)
+                painter.setPen(QColor('#e8f2ff'))
+                painter.drawText(box,Qt.AlignmentFlag.AlignCenter,label)
         if self.reference_index is not None and self.edit:
             marker = next((f for f in self.edit.frames() if f.source_index == self.reference_index), None)
             if marker is not None:

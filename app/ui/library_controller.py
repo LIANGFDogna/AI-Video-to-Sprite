@@ -21,11 +21,14 @@ from app.ui.character_panel import character_label
 from app.models.timeline_edit import EditHistory
 from app.ui.dialogs import MessageBox, FileDialog, reveal_in_explorer
 from app.models.project_library import SOURCE_KINDS
-from app.utils.paths import cache_directory
+from app.utils.paths import cache_directory, project_cache_root
 from app.utils.cache import save_rgba
 from app.utils.rgba_image import read_rgba, to_rgba8
 from app.core.group_export import sheet_path
 from app.core.final_frame_provider import FinalFrameProvider
+from app.core.frame_move import (apply_frame_state, canonical_folder, copy_canonical_frames,
+    copy_raster_edits, invalidate_sheet_manifest, mark_generated_stale)
+from app.core.sprite_sheet_slice import DEFAULT_FPS, SliceConfig, slice_frames
 from app.core.project_workspace import sanitize_project_name
 
 
@@ -359,8 +362,12 @@ class LibraryController(QObject):
         folder.mkdir()
         return folder
 
-    def drop_frames_to_group(self,source_animation_id,frame_indices,group_id,name=None):
-        "Selected Timeline frames become one Derived Frame Sequence snapshot in the target Group."
+    def move_selected_frames(self,source_animation_id,frame_indices,group_id,name=None):
+        """Move canonical frames into another Group as a new Sequence.
+
+        Only library records and canonical pixels move: the user's own media on disk is
+        never touched, and nothing is rendered through the FinalFrameProvider.
+        """
         h=self.host
         if h.interaction_busy:return None
         library=h.project.library
@@ -373,55 +380,144 @@ class LibraryController(QObject):
             h.status.setText(t('The source Animation is no longer in the project.'));return None
         base=h.project
         source=base if base.animation_id==source_animation_id else base.select_animation(source_animation_id)
-        if not source.layout or not source.source_path:
-            h.status.setText(t('Build the source Animation before creating a derived sequence.'));return None
+        count=source.video.frame_count
+        frames=[index for index in frames if index<count]
+        if not frames or len(frames)>=count:
+            h.status.setText(t('Keep at least one frame in the source Animation.'));return None
+        keep=[index for index in range(count) if index not in set(frames)]
+        mapping_target={new:old for new,old in enumerate(frames)}
+        mapping_keep={new:old for new,old in enumerate(keep)}
+        fps=source.video.fps or base.default_fps
         directory=cache_directory(source.project_id,h.project_file,source_animation_id)
-        try:
-            provider=FinalFrameProvider(source,directory,live_edit=True)
-            frames=[index for index in frames if index<len(provider)]
-            if not frames:raise ValueError('Selected frames are outside this Animation')
-            pixels=[provider.get_final_frame(index) for index in frames]
-        except (ValueError,OSError,KeyError) as error:
-            h.status.setText(t('Cached preview unavailable: {error}',error=str(error)));return None
-        folder=self._derived_folder(h.project_file,name or owner.name)
-        for index,pixels_row in enumerate(pixels):
-            save_rgba(folder/f'frame_{index:06d}.png',pixels_row)
-        provenance={'source_animation_id':source_animation_id,'source_frame_indices':list(frames),'created_at':now_stamp()}
-        previous=base.current_group_id
-        base.current_group_id=group_id
-        try:
-            p=base.import_frame_sequence(folder,source.video.fps or base.default_fps,True,'pad')
-        finally:
-            base.current_group_id=previous
-        p.motion_settings.enabled=False
-        resource=p.library.animation(p.animation_id)
-        resource.name=unique_name(name or t('{name} Frames',name=owner.name),
-            [r.name for r in p.library.in_group(group_id) if r.kind=='ANIMATION' and r.id!=resource.id],'_')
-        resource.metadata=dict(provenance)
-        p.export_settings.animation_name=resource.name
-        source_record=p.library.resources.get(resource.source_id)
-        if source_record is not None:
-            source_record.metadata=dict(provenance)
-            source_record.name=resource.name+' Source'
-        derived_directory=cache_directory(p.project_id,h.project_file,p.animation_id)
+        canonical=canonical_folder(directory)
+        edits_root=project_cache_root(source.project_id,h.project_file)/'pixel_edits'
         from app.core.pipeline import Pipeline
         try:
-            Pipeline(p,derived_directory).build()
-            p.library.mark_generated(p.animation_id,ready=True)
-        except (ValueError,OSError) as error:
-            h.status.setText(t('Cached preview unavailable: {error}',error=str(error)))
-        before=asdict(library)
+            # 1. The source keeps its remaining canonical frames and its Animation Transform.
+            keep_folder=self._derived_folder(h.project_file,owner.name)
+            copy_canonical_frames(canonical,keep,keep_folder)
+            previous=base.current_group_id
+            base.current_group_id=owner.group_id
+            try:
+                reduced=base.import_frame_sequence(keep_folder,fps,True,'strict')
+            finally:
+                base.current_group_id=previous
+            reduced.motion_settings.enabled=False
+            reduced.animation_transform=copy.deepcopy(source.animation_transform)
+            reduced.export_settings=copy.deepcopy(source.export_settings)
+            reduced_directory=cache_directory(reduced.project_id,h.project_file,reduced.animation_id)
+            Pipeline(reduced,reduced_directory).import_sequence()
+            Pipeline(reduced,reduced_directory).ensure_aligned()
+            # Per-frame state is applied once the frame count is authoritative.
+            apply_frame_state(reduced,source,mapping_keep,fps)
+            # 2. The target holds only the moved frames; its own Animation Transform starts at (0,0).
+            target_folder=self._derived_folder(h.project_file,name or library.groups[group_id].name)
+            copy_canonical_frames(canonical,frames,target_folder)
+            previous=reduced.current_group_id
+            reduced.current_group_id=group_id
+            try:
+                final=reduced.import_frame_sequence(target_folder,fps,True,'strict')
+            finally:
+                reduced.current_group_id=previous
+            final.motion_settings.enabled=False
+            target_directory=cache_directory(final.project_id,h.project_file,final.animation_id)
+            Pipeline(final,target_directory).import_sequence()
+            Pipeline(final,target_directory).ensure_aligned()
+            apply_frame_state(final,source,mapping_target,fps)
+            # 3. Pencil / Eraser layers belong to the frame and move with it.
+            copy_raster_edits(reduced,source,mapping_keep,edits_root,edits_root)
+            copy_raster_edits(final,source,mapping_target,edits_root,edits_root)
+        except (ValueError,OSError,KeyError) as error:
+            h.status.setText(t('Cannot move frames: {error}',error=str(error)));return None
+        # 4. Library records: the source keeps its identity, the target becomes a new Sequence.
+        records=final.library
+        original_row=records.animation(source_animation_id)
+        reduced_row=records.animation(reduced.animation_id)
+        target_row=records.animation(final.animation_id)
+        original_source=records.resources.get(original_row.source_id) if original_row is not None else None
+        reduced_source=records.resources.get(reduced_row.source_id) if reduced_row is not None else None
+        target_source=records.resources.get(target_row.source_id) if target_row is not None else None
+        if not all((original_row,reduced_row,target_row,reduced_source,target_source)):
+            h.status.setText(t('The source Animation is no longer in the project.'));return None
+        provenance={'source_animation_id':source_animation_id,'source_frame_indices':list(frames),
+                    'created_at':now_stamp(),'moved':True}
+        target_row.name=unique_name(name or library.groups[group_id].name,
+            [row.name for row in library.in_group(group_id) if row.kind=='ANIMATION'],'_')
+        target_row.metadata=dict(provenance)
+        target_row.ready=False
+        target_source.name=target_row.name+' Source'
+        target_source.metadata=dict(provenance)
+        target_source.ready=False
+        final.export_settings.animation_name=target_row.name
+        original_row.animation_id=reduced.animation_id
+        original_row.metadata={**original_row.metadata,'moved_frames_out':len(frames)}
+        original_row.ready=False
+        original_source.path=reduced_source.path
+        original_source.metadata={**original_source.metadata,'repacked':True}
+        original_source.ready=False
+        records.resources.pop(reduced_row.id,None)
+        records.resources.pop(reduced_source.id,None)
+        for sheet in records.generated_sheets(source_animation_id):
+            sheet.animation_id=reduced.animation_id
+            sheet.ready=False
+        # Workspace state follows the Animation identity, never a retired id.
+        for group in records.groups.values():
+            owners={row.animation_id for row in records.in_group(group.id,kinds={'ANIMATION'})}
+            states={}
+            for key,value in group.animation_states.items():
+                if key==source_animation_id and reduced.animation_id in owners:
+                    moved_state=copy.deepcopy(value)
+                    reference=moved_state.frame_reference
+                    if reference and reference.get('animation_id')==source_animation_id:
+                        # The edit reference belongs to the frame data that stayed here.
+                        moved_state.frame_reference=dict(reference,animation_id=reduced.animation_id)
+                    states[reduced.animation_id]=moved_state
+                elif key in owners:
+                    states[key]=value
+            group.animation_states=states
+            selected=group.ui_state.animation_id
+            if selected==source_animation_id and reduced.animation_id in owners:
+                group.ui_state.animation_id=reduced.animation_id
+            elif selected and selected not in owners:
+                group.ui_state.animation_id=None
+        mark_generated_stale(records,reduced.animation_id)
+        mark_generated_stale(records,final.animation_id)
+        records.refresh_status()
+        invalidate_sheet_manifest(reduced_directory)
+        invalidate_sheet_manifest(target_directory)
+        try:
+            records.validate()
+        except ValueError as error:
+            h.status.setText(t('Cannot move frames: {error}',error=str(error)));return None
+        # 5. One Undo Command for the whole move; both Animations already live on disk.
+        original_snapshot=(base.animation_snapshot() if base.animation_id==source_animation_id
+                           else copy.deepcopy(base.animations.get(source_animation_id) or {}))
+        if not original_snapshot:
+            h.status.setText(t('The source Animation is no longer in the project.'));return None
+        # The retired Animation lives in the Undo entry only: a leftover snapshot would be
+        # revived as a brand new library record by ensure_library().
+        final.animations.pop(source_animation_id,None)
+        before={'library':asdict(library),'animations':{source_animation_id:copy.deepcopy(original_snapshot)},
+                'animation_id':source_animation_id,'group':owner.group_id}
+        final.animations[reduced.animation_id]=reduced.animation_snapshot()
+        after={'library':asdict(final.library),
+               'animations':{source_animation_id:copy.deepcopy(original_snapshot),
+                             reduced.animation_id:reduced.animation_snapshot(),
+                             final.animation_id:final.animation_snapshot()},
+               'animation_id':final.animation_id,'group':group_id}
         h._invalidate_reviews(False)
-        h.project,h.cache_dir=p,derived_directory
-        h.project.current_group_id=group_id
-        h.project.current_character_id=p.library.groups[group_id].character_id
-        h.dirty,h.built=True,bool(resource.ready)
-        self.record(('library',before,asdict(h.project.library),previous,group_id,'Derived Frame Sequence'))
+        h.project,h.cache_dir=final,target_directory
+        h.project.current_group_id=owner.group_id
+        h.project.current_character_id=final.library.groups[owner.group_id].character_id
+        h.dirty,h.built=True,False
+        self.record(('frames',before,after,'Move Frames'))
+        h.preview_cache.clear()
         h._loaded()
-        self.select_animation(resource.animation_id)
-        h.status.setText(t('Created a {count}-frame derived sequence in {group}.',
-            count=len(frames),group=p.library.groups[group_id].name))
-        return resource.id
+        self.refresh()
+        self.select_animation(reduced.animation_id)
+        h.status.setText(t('Moved {count} frame(s) to {group}.',count=len(frames),
+            group=final.library.groups[group_id].name))
+        return final.library.animation(final.animation_id).id
 
     def remove_character(self,ident,confirmed=False):
         lib=self.host.project.library
@@ -821,6 +917,31 @@ class LibraryController(QObject):
             if history:history.redo() if redo else history.undo()
             h._sync_character_owner(state["character_reference"])
             h._restore_edit(state)
+        elif entry[0]=='frames':
+            # A frame move keeps both Animations on disk; undo only re-points records.
+            _,before,after,label=entry
+            wanted=before if not redo else after
+            other=after if not redo else before
+            if h.project.source_path:
+                h.project.animations[h.project.animation_id]=h.project.animation_snapshot()
+            try:
+                h.project.library=ProjectLibrary.from_dict(wanted['library'])
+            except ValueError:
+                h.status.setText(t('Cannot undo this frame move.'));return False
+            owners={row.animation_id for row in h.project.library.resources.values()
+                    if row.kind=='ANIMATION' and row.animation_id}
+            for ident in set(other['animations'])|set(wanted['animations'])|owners:
+                if ident in wanted['animations'] and ident in owners:
+                    h.project.animations[ident]=copy.deepcopy(wanted['animations'][ident])
+                elif ident not in owners:
+                    h.project.animations.pop(ident,None)
+            h.project.animation_id='default'
+            h.project.source_video=''
+            h.project.sequence_folder=''
+            group=wanted['group'] if wanted['group'] in h.project.library.groups else None
+            self.select_group(group,capture=False)
+            if wanted['animation_id'] and h.project.library.animation(wanted['animation_id']):
+                self.select_animation(wanted['animation_id'])
         else:
             _,before,after,old_group,new_group,label=entry
             # UI state, readiness and background results are not edit instructions.
@@ -878,6 +999,147 @@ class LibraryController(QObject):
             if resource:h._remember_path('sprite_sheet_import',path,file=True);self.activate('RESOURCE',resource.id)
             return resource
         except (OSError,ValueError) as error:h._failed(str(error))
+
+    def preview_sprite_sheet(self,resource_id):
+        "Show the original Sprite Sheet in the asset view."
+        self.activate('RESOURCE',resource_id)
+        return resource_id
+
+    def _sheet_default_config(self,pixels):
+        height,width=pixels.shape[:2]
+        rows=2 if abs(width-height)<=max(1,round(max(width,height)*.05)) else 1
+        return SliceConfig(columns=4,rows=rows,cell_width=max(1,width//4),cell_height=max(1,height//rows),
+            fps=DEFAULT_FPS)
+
+    def open_sprite_sheet_slicer(self,resource_id,force_new=False):
+        "One dialog for Slice / Create Animation; re-slicing asks about the existing Animation."
+        h=self.host;library=h.project.library
+        if h.interaction_busy:return None
+        row=library.resources.get(resource_id)
+        if row is None or row.kind not in ('SOURCE_SPRITE_SHEET','GENERATED_SPRITE_SHEET'):
+            h.status.setText(t('The Sprite Sheet is no longer in the project.'));return None
+        existing=None;mode='new'
+        sliced=row.metadata.get('sliced_animation')
+        if sliced and not force_new and library.animation(sliced) is not None:
+            choice=MessageBox.choice(h,t('Slice Sprite Sheet'),
+                t('This Sprite Sheet already created an Animation.'),
+                ('Create a new Animation','Replace the existing Animation','Cancel'),0)
+            if choice<0 or choice==2:return None
+            mode='replace' if choice==1 else 'new'
+            existing=library.animation(sliced).name
+        try:
+            pixels=to_rgba8(read_rgba(sheet_path(h.project,h.project_file,row)))
+        except (OSError,ValueError) as error:
+            h.status.setText(t('Cannot read the Sprite Sheet: {error}',error=str(error)));return None
+        stored=row.metadata.get('slice_config')
+        try:
+            config=SliceConfig.from_dict(stored) if stored else self._sheet_default_config(pixels)
+        except ValueError:
+            config=self._sheet_default_config(pixels)
+        from app.ui.sprite_sheet_slicer_dialog import SpriteSheetSlicerDialog
+        dialog=SpriteSheetSlicerDialog(h,row.name,pixels,config=config,mode=mode,existing=existing)
+        if dialog.exec()!=QDialog.DialogCode.Accepted or dialog.result_config is None:return None
+        return self.slice_sprite_sheet(resource_id,dialog.result_config,mode=mode)
+
+    def slice_sprite_sheet(self,resource_id,config,mode='new'):
+        """Fixed-cell slice of an imported Sprite Sheet into a sequence and an Animation.
+
+        Cells keep their exact size, position and alpha: no trim, no resize and no second
+        normalize. The original sheet resource and its PNG stay untouched.
+        """
+        h=self.host
+        if h.interaction_busy:return None
+        library=h.project.library
+        row=library.resources.get(resource_id)
+        if row is None or row.kind not in ('SOURCE_SPRITE_SHEET','GENERATED_SPRITE_SHEET'):
+            h.status.setText(t('The Sprite Sheet is no longer in the project.'));return None
+        if not isinstance(config,SliceConfig):
+            config=SliceConfig.from_dict(config)
+        base=h.project
+        try:
+            pixels=to_rgba8(read_rgba(sheet_path(base,h.project_file,row)))
+            resolved,frames,skipped=slice_frames(pixels,config)
+        except (OSError,ValueError) as error:
+            h.status.setText(t('Cannot slice the Sprite Sheet: {error}',error=str(error)));return None
+        name=Path(row.name).stem or 'Sprite'
+        folder=self._derived_folder(h.project_file,name)
+        for index,frame in enumerate(frames):
+            save_rgba(folder/f'frame_{index:06d}.png',frame)
+        previous=base.current_group_id
+        base.current_group_id=row.group_id
+        try:
+            final=base.import_frame_sequence(folder,resolved.fps,True,'strict')
+        finally:
+            base.current_group_id=previous
+        final.motion_settings.enabled=False
+        final.export_settings.loop=bool(resolved.loop)
+        target_directory=cache_directory(final.project_id,h.project_file,final.animation_id)
+        from app.core.pipeline import Pipeline
+        try:
+            Pipeline(final,target_directory).import_sequence()
+            Pipeline(final,target_directory).ensure_aligned()
+        except (ValueError,OSError) as error:
+            h.status.setText(t('Cannot slice the Sprite Sheet: {error}',error=str(error)));return None
+        # The Timeline shows the sliced frames immediately, exactly like Prepare Editor does.
+        final.timeline_edit.initialize(final.video.frame_count,resolved.fps)
+        records=final.library
+        animation_row=records.animation(final.animation_id)
+        sequence_row=records.resources.get(animation_row.source_id) if animation_row is not None else None
+        sheet_row=records.resources.get(resource_id)
+        if animation_row is None or sequence_row is None or sheet_row is None:
+            h.status.setText(t('The Sprite Sheet is no longer in the project.'));return None
+        slice_metadata={'slice_config':asdict(resolved),'sliced_frames':len(frames),
+                        'skipped_empty':skipped,'sliced_at':now_stamp()}
+        animation_row.name=unique_name(name,[other.name for other in records.in_group(row.group_id)
+            if other.kind=='ANIMATION' and other.id!=animation_row.id],'_')
+        animation_row.metadata=dict(slice_metadata,slice_source=resource_id)
+        animation_row.ready=False
+        sequence_row.name=animation_row.name+'_Source'
+        sequence_row.metadata=dict(slice_metadata,slice_source=resource_id)
+        final.export_settings.animation_name=animation_row.name
+        replaced=None
+        if mode=='replace' and sheet_row.metadata.get('sliced_animation') not in (None,animation_row.animation_id):
+            old_id=sheet_row.metadata.get('sliced_animation')
+            old_row=records.animation(old_id)
+            if old_row is not None:
+                replaced=old_row.name
+                old_sequence=records.resources.get(old_row.source_id)
+                records.resources.pop(old_row.id,None)
+                if old_sequence is not None:
+                    records.resources.pop(old_sequence.id,None)
+                for sheet in records.generated_sheets(old_id):
+                    records.resources.pop(sheet.id,None)
+                for group in records.groups.values():
+                    group.animation_states.pop(old_id,None)
+                    if group.ui_state.animation_id==old_id:group.ui_state.animation_id=None
+                final.animations.pop(old_id,None)
+        sheet_row.metadata=dict(sheet_row.metadata,**slice_metadata,sliced_animation=animation_row.animation_id)
+        try:
+            records.validate()
+        except ValueError as error:
+            h.status.setText(t('Cannot slice the Sprite Sheet: {error}',error=str(error)));return None
+        recorded=sheet_row.metadata.get('sliced_animation')
+        original_snapshot=(base.animation_snapshot() if base.source_path
+                           else copy.deepcopy(base.animations.get(base.animation_id) or {}))
+        before={'library':asdict(library),'animations':({base.animation_id:copy.deepcopy(original_snapshot)}
+                if original_snapshot else {}),'animation_id':base.animation_id,'group':base.current_group_id}
+        after={'library':asdict(final.library),
+               'animations':({base.animation_id:copy.deepcopy(original_snapshot)} if original_snapshot else {}),
+               'animation_id':final.animation_id,'group':row.group_id}
+        after['animations'][final.animation_id]=final.animation_snapshot()
+        h._invalidate_reviews(False)
+        h.project,h.cache_dir=final,target_directory
+        h.project.current_group_id=row.group_id
+        h.project.current_character_id=final.library.groups[row.group_id].character_id
+        h.dirty,h.built=True,False
+        self.record(('frames',before,after,'Slice Sprite Sheet'))
+        h.preview_cache.clear()
+        h._loaded()
+        self.refresh()
+        self.select_animation(final.animation_id)
+        h.status.setText(t('Created {frames}-frame animation {name} from the Sprite Sheet.',
+            frames=len(frames),name=final.library.animation(final.animation_id).name))
+        return final.library.animation(final.animation_id).id
 
     def export_groups(self,batch=False):
         if self.host.interaction_busy:return

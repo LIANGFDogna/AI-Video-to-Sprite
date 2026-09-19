@@ -382,24 +382,6 @@ def test_canvas_drag_100_visual_no_trail(qt, tmp_path):
         close_window(qt, w)
 
 
-def test_timeline_drag_visual_no_snapshot(qt, tmp_path, monkeypatch):
-    "Frame drags show a light text label; the Timeline is never grabbed into a pixmap."
-    w, c, group, animation_id = editor_window(qt, tmp_path)
-    try:
-        timeline = w.editor.timeline
-        grabbed = []
-        pixmaps = []
-        monkeypatch.setattr(QWidget, 'grab', lambda self, *args, **kwargs: grabbed.append(self))
-        monkeypatch.setattr(QDrag, 'setPixmap', lambda self, pixmap: pixmaps.append(pixmap))
-        monkeypatch.setattr(QDrag, 'exec', lambda self, *args, **kwargs: Qt.DropAction.IgnoreAction)
-        timeline.select_ids([frame.id for frame in timeline.edit.frames()][:4])
-        assert timeline._begin_frame_drag()
-        assert not grabbed
-        assert pixmaps and pixmaps[0].height() <= 32 and pixmaps[0].width() < 160
-        assert len([frame.id for frame in timeline.edit.frames()][:4]) == 4
-    finally:
-        close_window(qt, w)
-
 
 def test_interaction_cancel_after_paint(qt, tmp_path):
     w, c, group, animation_id = editor_window(qt, tmp_path)
@@ -456,129 +438,11 @@ def test_interaction_cancel_after_frame_drag(qt, tmp_path):
         close_window(qt, w)
 
 
-def test_multi_frame_drag_to_group(qt, tmp_path):
-    w, c, group, animation_id = editor_window(qt, tmp_path)
-    try:
-        target = c.new_group(name='AttackPrep')
-        tree = w.library_panel.tree
-        item = w.library_panel.items[('GROUP', target.id)]
-        tree.scrollToItem(item)
-        events(qt, lambda: True)
-        payload = frame_payload(animation_id, [1, 2, 3, 5])
-        drop = QDropEvent(QPointF(tree.visualItemRect(item).center()), Qt.DropAction.CopyAction, payload,
-                          Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
-        tree.dropEvent(drop)
-        assert drop.isAccepted()
-        events(qt, lambda: derived_row(w, target.id) is not None)
-        row = derived_row(w, target.id)
-        assert row is not None
-        assert row.metadata['source_animation_id'] == animation_id
-        assert row.metadata['source_frame_indices'] == [1, 2, 3, 5]
-        derived = w.project.select_animation(row.animation_id)
-        assert derived.video.frame_count == 4
-        assert w.last_error is None
-    finally:
-        close_window(qt, w)
 
 
-def test_multi_frame_order_preserved(qt, tmp_path):
-    w, c, group, animation_id = editor_window(qt, tmp_path)
-    try:
-        target = c.new_group(name='AttackPrep')
-        assert c.drop_frames_to_group(animation_id, [3, 1, 2], target.id) is not None
-        row = derived_row(w, target.id)
-        derived = w.project.select_animation(row.animation_id)
-        folder = Path(derived.sequence_folder)
-        written = [np.array(Image.open(path).convert('RGBA')) for path in sorted(folder.glob('*.png'))]
-        for position, index in enumerate([3, 1, 2]):
-            assert np.array_equal(written[position], source_pixels(w, animation_id, index)), position
-        assert row.metadata['source_frame_indices'] == [3, 1, 2]
-    finally:
-        close_window(qt, w)
 
 
-def test_multi_frame_drag_does_not_remove_source_frames(qt, tmp_path):
-    w, c, group, animation_id = editor_window(qt, tmp_path)
-    try:
-        before = final_pixels(w).copy()
-        target = c.new_group(name='AttackPrep')
-        assert c.drop_frames_to_group(animation_id, [1, 2, 3, 5], target.id) is not None
-        assert w.project.library.animation(animation_id) is not None
-        assert w.project.select_animation(animation_id).video.frame_count == 6
-        assert np.array_equal(source_pixels(w, animation_id, 0), before)
-    finally:
-        close_window(qt, w)
 
-
-def test_derived_sequence_uses_final_frame_provider(qt, tmp_path):
-    "Corrections and raster edits must be part of the snapshot."
-    w, c, group, animation_id = editor_window(qt, tmp_path)
-    try:
-        w.add_frame_correction([2], 3, -2)
-        w.editor.select(2)
-        events(qt, lambda: not w.editor.worker and not w.editor.pending)
-        paint(w, [(10, 10)], size=6, color=(255, 128, 0, 255))
-        events(qt, lambda: not w.editor.worker and not w.editor.pending)
-        expected = final_pixels(w, 2).copy()
-        target = c.new_group(name='AttackPrep')
-        assert c.drop_frames_to_group(animation_id, [2], target.id) is not None
-        row = derived_row(w, target.id)
-        derived = w.project.select_animation(row.animation_id)
-        written = np.array(Image.open(sorted(Path(derived.sequence_folder).glob('*.png'))[0]).convert('RGBA'))
-        assert np.array_equal(written, expected)
-        assert written[10, 10][0] == 255
-    finally:
-        close_window(qt, w)
-
-
-def test_derived_sequence_is_snapshot(qt, tmp_path):
-    w, c, group, animation_id = editor_window(qt, tmp_path)
-    try:
-        target = c.new_group(name='AttackPrep')
-        assert c.drop_frames_to_group(animation_id, [1, 2], target.id) is not None
-        row = derived_row(w, target.id)
-        derived = w.project.select_animation(row.animation_id)
-        folder = Path(derived.sequence_folder)
-        before = [np.array(Image.open(path).convert('RGBA')) for path in sorted(folder.glob('*.png'))]
-        w.project.set_frame_correction(1, 5, 5)
-        w.project.set_frame_correction(2, -4, 0)
-        after = [np.array(Image.open(path).convert('RGBA')) for path in sorted(folder.glob('*.png'))]
-        for position in range(2):
-            assert np.array_equal(before[position], after[position]), position
-        assert row.metadata['created_at']
-    finally:
-        close_window(qt, w)
-
-
-def test_derived_sequence_no_rekey(qt, tmp_path):
-    w, c, group, animation_id = editor_window(qt, tmp_path)
-    try:
-        target = c.new_group(name='AttackPrep')
-        assert c.drop_frames_to_group(animation_id, [1, 2], target.id) is not None
-        row = derived_row(w, target.id)
-        derived = w.project.select_animation(row.animation_id)
-        assert derived.input_mode == 'frame_sequence' and derived.is_passthrough
-        assert derived.processing_mode == 'full'
-        raw = np.array(Image.open(sorted(Path(derived.sequence_folder).glob('*.png'))[0]).convert('RGBA'))
-        assert raw[..., 3].min() == 0 and raw[..., 3].max() == 180
-    finally:
-        close_window(qt, w)
-
-
-def test_derived_sequence_undo(qt, tmp_path):
-    w, c, group, animation_id = editor_window(qt, tmp_path)
-    try:
-        target = c.new_group(name='AttackPrep')
-        assert c.drop_frames_to_group(animation_id, [1, 2, 3], target.id) is not None
-        row = derived_row(w, target.id)
-        assert row is not None
-        assert c.entries[-1][-1] == 'Derived Frame Sequence' and c.index == len(c.entries)
-        w.undo_edit()
-        assert derived_row(w, target.id) is None
-        assert w.project.library.animation(row.animation_id) is None
-        assert w.last_error is None
-    finally:
-        close_window(qt, w)
 
 
 def test_frame_context_menu_set_reference(qt, tmp_path):

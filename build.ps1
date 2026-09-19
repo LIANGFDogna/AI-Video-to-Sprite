@@ -262,6 +262,59 @@ if ($spriteMachineVerify.ExitCode -ne 0) { throw "Packaged State Machine restart
 $spriteMachineReport = Get-Content -LiteralPath (Join-Path $spriteMachineDirectory 'validation.json') -Raw | ConvertFrom-Json
 if ($spriteMachineReport.status -ne 'passed' -or -not $spriteMachineReport.restart_verified -or -not $spriteMachineReport.set_state_plays_via_set_provider) { throw 'Missing State Machine acceptance result.' }
 
+$spriteSheetDirectory = Join-Path $PSScriptRoot ('build\sheet-smoke-' + [Guid]::NewGuid().ToString('N'))
+$spriteSheetSmoke = Start-Process -FilePath $spriteExecutable -ArgumentList @('--smoke-sprite-sheet', ('"' + $spriteSheetDirectory + '"')) -WindowStyle Hidden -PassThru
+if (-not $spriteSheetSmoke.WaitForExit(300000)) {
+    $spriteSheetSmoke.Kill()
+    throw 'Packaged Sprite Sheet slicer smoke timed out.'
+}
+$spriteSheetSmoke.Refresh()
+if ($spriteSheetSmoke.ExitCode -ne 0) { throw "Packaged Sprite Sheet slicer failed ($($spriteSheetSmoke.ExitCode)). Check logs/app.log." }
+$spriteSheetVerify = Start-Process -FilePath $spriteExecutable -ArgumentList @('--smoke-sprite-sheet', ('"' + $spriteSheetDirectory + '"'), '--verify-sprite-sheet') -WindowStyle Hidden -PassThru
+if (-not $spriteSheetVerify.WaitForExit(180000)) {
+    $spriteSheetVerify.Kill()
+    throw 'Packaged Sprite Sheet restart verification timed out.'
+}
+$spriteSheetVerify.Refresh()
+if ($spriteSheetVerify.ExitCode -ne 0) { throw "Packaged Sprite Sheet restart verification failed ($($spriteSheetVerify.ExitCode)). Check logs/app.log." }
+$spriteSheetReport = Get-Content -LiteralPath (Join-Path $spriteSheetDirectory 'validation.json') -Raw | ConvertFrom-Json
+if ($spriteSheetReport.status -ne 'passed' -or -not $spriteSheetReport.restart_verified -or -not $spriteSheetReport.row_major_order -or $spriteSheetReport.frames -ne 8) { throw 'Missing Sprite Sheet slicer acceptance result.' }
+
+$spriteInteractionReports = @()
+$spritePreviousScreenScale = $env:QT_SCREEN_SCALE_FACTORS
+$spritePreviousScale = $env:QT_SCALE_FACTOR
+try {
+    $env:QT_SCALE_FACTOR = '1'
+    foreach ($spriteInteractionScale in @('1.0', '1.25', '1.5')) {
+        $env:QT_SCREEN_SCALE_FACTORS = (@($spriteInteractionScale) * 8) -join ';'
+        $spriteInteractionDirectory = Join-Path $PSScriptRoot ('build\interaction-smoke-' + $spriteInteractionScale + '-' + [Guid]::NewGuid().ToString('N'))
+        $spriteInteractionVerifyTarget = $spriteInteractionDirectory
+        $spriteInteractionSmoke = Start-Process -FilePath $spriteExecutable -ArgumentList @('--smoke-interaction-performance', ('"' + $spriteInteractionDirectory + '"')) -WindowStyle Hidden -PassThru
+        if (-not $spriteInteractionSmoke.WaitForExit(600000)) {
+            $spriteInteractionSmoke.Kill()
+            throw 'Packaged frame move / interaction performance smoke timed out.'
+        }
+        $spriteInteractionSmoke.Refresh()
+        if ($spriteInteractionSmoke.ExitCode -ne 0) { throw "Packaged interaction smoke failed at DPR $spriteInteractionScale ($($spriteInteractionSmoke.ExitCode)). Check logs/app.log." }
+        $spriteInteractionReport = Get-Content -LiteralPath (Join-Path $spriteInteractionDirectory 'validation.json') -Raw | ConvertFrom-Json
+        $spriteInteractionReport | Add-Member -NotePropertyName dpr -NotePropertyValue ([double]$spriteInteractionScale) -Force
+        if ($spriteInteractionReport.status -ne 'passed' -or $spriteInteractionReport.canvas_visual_diff -ne 0 -or $spriteInteractionReport.timeline_visual_diff -ne 0 -or $spriteInteractionReport.tree_visual_diff -ne 0 -or -not $spriteInteractionReport.paint_median_ok -or -not $spriteInteractionReport.paint_p95_ok) {
+            throw "Missing interaction acceptance result at DPR $spriteInteractionScale."
+        }
+        $spriteInteractionReports += $spriteInteractionReport
+    }
+} finally {
+    $env:QT_SCREEN_SCALE_FACTORS = $spritePreviousScreenScale
+    $env:QT_SCALE_FACTOR = $spritePreviousScale
+}
+$spriteInteractionVerify = Start-Process -FilePath $spriteExecutable -ArgumentList @('--smoke-interaction-performance', ('"' + $spriteInteractionVerifyTarget + '"'), '--verify-interaction') -WindowStyle Hidden -PassThru
+if (-not $spriteInteractionVerify.WaitForExit(240000)) {
+    $spriteInteractionVerify.Kill()
+    throw 'Packaged frame move restart verification timed out.'
+}
+$spriteInteractionVerify.Refresh()
+if ($spriteInteractionVerify.ExitCode -ne 0) { throw "Packaged frame move restart verification failed ($($spriteInteractionVerify.ExitCode)). Check logs/app.log." }
+
 $spritePixelDirectory = Join-Path $PSScriptRoot ('build\pixel-smoke-' + [Guid]::NewGuid().ToString('N'))
 $spritePixelSmoke = Start-Process -FilePath $spriteExecutable -ArgumentList @('--smoke-pixel-tools', ('"' + $spritePixelDirectory + '"')) -WindowStyle Hidden -PassThru
 if (-not $spritePixelSmoke.WaitForExit(420000)) {
@@ -281,6 +334,6 @@ $spritePixelReport = Get-Content -LiteralPath (Join-Path $spritePixelDirectory '
 if ($spritePixelReport.status -ne 'passed' -or -not $spritePixelReport.restart_verified -or $spritePixelReport.canvas_trail_pixel_difference -ne 0) { throw 'Missing pixel tool acceptance result.' }
 
 $spritePathReports = & (Join-Path $PSScriptRoot 'scripts\verify_path_ui.ps1') -Executable $spriteExecutable
-$spriteReceipt = @{ status = 'passed'; build_version = '20260917-pixel-tools-frame-drag'; path_validation = $spritePathReports; reference_validation = $spriteReferenceReports; group_validation = $spriteGroupReport; character_validation = $spriteCharacterReport; frame_validation = $spriteFrameReport; set_validation = $spriteSetReport; machine_validation = $spriteMachineReport; pixel_validation = $spritePixelReport; editor_validation = $spriteEditorReport; executable_sha256 = (Get-FileHash -LiteralPath $spriteExecutable -Algorithm SHA256).Hash; verified_at = (Get-Date).ToString('o') }
+$spriteReceipt = @{ status = 'passed'; build_version = '20260919-sprite-sheet-slicer'; sheet_validation = $spriteSheetReport; interaction_validation = $spriteInteractionReports; path_validation = $spritePathReports; reference_validation = $spriteReferenceReports; group_validation = $spriteGroupReport; character_validation = $spriteCharacterReport; frame_validation = $spriteFrameReport; set_validation = $spriteSetReport; machine_validation = $spriteMachineReport; pixel_validation = $spritePixelReport; editor_validation = $spriteEditorReport; executable_sha256 = (Get-FileHash -LiteralPath $spriteExecutable -Algorithm SHA256).Hash; verified_at = (Get-Date).ToString('o') }
 $spriteReceipt | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $spriteReleaseDirectory 'release-validation.json') -Encoding UTF8
 Write-Host "Built $spriteExecutable. Video input uses FFmpeg; frame sequence input does not. All release checks passed."

@@ -1,7 +1,30 @@
 import numpy as np
 from PySide6.QtCore import Qt, Signal, QPointF, QRectF
-from PySide6.QtGui import QColor, QPen, QImage, QPixmap
+from PySide6.QtGui import QColor, QPen, QImage, QPainter, QPixmap
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsView
+
+
+class ImageItem(QGraphicsItem):
+    """One QImage drawn straight into the scene so a stroke can repaint a dirty rect only."""
+
+    def __init__(self,parent=None):
+        super().__init__(parent)
+        self._image=QImage()
+        self.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+
+    def image(self):
+        return self._image
+
+    def set_image(self,image):
+        self.prepareGeometryChange()
+        self._image=image
+        self.update()
+
+    def boundingRect(self):
+        return QRectF(0,0,self._image.width(),self._image.height())
+
+    def paint(self,painter,option,widget=None):
+        if not self._image.isNull():painter.drawImage(0,0,self._image)
 from app.models.pixel_edit import DEFAULT_BRUSH_SIZE
 from app.ui.video_viewer import VideoViewer
 
@@ -31,6 +54,11 @@ class EditorCanvas(VideoViewer):
         self.idle_ghost_item=self.scene().addPixmap(QPixmap());self.idle_ghost_item.setZValue(-1)
         self.idle_ghost_item.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
         self.idle_ghost_item.setCacheMode(QGraphicsItem.CacheMode.NoCache)
+        # Live stroke preview and the lightweight drag preview share one slot above the frame.
+        self.stroke_item=ImageItem();self.stroke_item.setZValue(.5);self.stroke_item.setVisible(False)
+        self.scene().addItem(self.stroke_item)
+        self.drag_item=self.scene().addPixmap(QPixmap());self.drag_item.setZValue(.5)
+        self.drag_item.setAcceptedMouseButtons(Qt.MouseButton.NoButton);self.drag_item.setVisible(False)
         # Frame Reference Overlay: above the Character Ghost, below the editable frame.
         self.frame_reference_item=self.scene().addPixmap(QPixmap());self.frame_reference_item.setZValue(-.5)
         self.frame_reference_item.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
@@ -93,6 +121,21 @@ class EditorCanvas(VideoViewer):
         self.scene().invalidate(self.pixmap_item.sceneBoundingRect())
         self.viewport().update()
 
+    def begin_stroke_preview(self,image):
+        "One in-memory working buffer; mouse moves never touch the pipeline."
+        self.stroke_item.set_image(image)
+        self.stroke_item.setVisible(True)
+        self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.BoundingRectViewportUpdate)
+
+    def update_stroke_preview(self,rect):
+        "Partial repaint: only the brush's dirty rect leaves the item."
+        if rect is None:return
+        self.stroke_item.update(QRectF(float(rect[0]),float(rect[1]),float(rect[2]),float(rect[3])))
+
+    def end_stroke_preview(self):
+        self.stroke_item.setVisible(False)
+        self.viewport().update()
+
     def clear_image(self):
         super().clear_image()
         self.set_idle_ghost(None)
@@ -109,7 +152,11 @@ class EditorCanvas(VideoViewer):
         self.pan_start = None
         self.dragging = False
         try:
+            self.drag_item.setVisible(False)
+            self.drag_item.setPos(0, 0)
+            self.pixmap_item.setVisible(True)
             self.pixmap_item.setPos(0, 0)
+            self.stroke_item.setVisible(False)
         except RuntimeError:
             return False  # Qt may already have deleted the scene items during shutdown.
         self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.BoundingRectViewportUpdate)
@@ -133,6 +180,11 @@ class EditorCanvas(VideoViewer):
         if event.button() == Qt.MouseButton.LeftButton:
             self.drag_start = self.mapToScene(event.position().toPoint())
             self.dragging = True
+            # The frame pixmap itself never moves: a lightweight preview follows the cursor.
+            self.drag_item.setPixmap(self.pixmap_item.pixmap())
+            self.drag_item.setPos(self.pixmap_item.pos())
+            self.drag_item.setVisible(True)
+            self.pixmap_item.setVisible(False)
             # While an item is being dragged the whole viewport is repainted.
             self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
             event.accept()
@@ -150,9 +202,11 @@ class EditorCanvas(VideoViewer):
             return
         if self.drag_start is not None:
             delta = self.mapToScene(event.position().toPoint())-self.drag_start
-            previous = self.pixmap_item.sceneBoundingRect()
-            self.pixmap_item.setPos(delta)
-            self._repaint_item(previous)
+            previous = self.drag_item.sceneBoundingRect()
+            self.drag_item.setPos(delta)
+            self.scene().invalidate(previous)
+            self.scene().invalidate(self.drag_item.sceneBoundingRect())
+            self.viewport().update()
             event.accept()
         elif self.pan_start is not None:
             delta = event.position()-self.pan_start
@@ -175,10 +229,16 @@ class EditorCanvas(VideoViewer):
             delta = self.mapToScene(event.position().toPoint())-self.drag_start
             self.drag_start = None
             self.dragging = False
-            previous = self.pixmap_item.sceneBoundingRect()
+            previous = self.drag_item.sceneBoundingRect()
+            self.drag_item.setVisible(False)
+            self.drag_item.setPos(0, 0)
+            self.pixmap_item.setVisible(True)
             self.pixmap_item.setPos(0, 0)
             self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.BoundingRectViewportUpdate)
-            self._repaint_item(previous)
+            self.scene().invalidate(previous)
+            self.scene().invalidate(self.pixmap_item.sceneBoundingRect())
+            # update() alone can leave stale pixels behind on Windows; repaint once on release.
+            self.viewport().repaint()
             if delta.manhattanLength() > 1:
                 dx, dy = screen_delta_to_canvas_delta((delta.x(), delta.y()), display_scale=self.display_scale)
                 self.moved.emit(round(dx), round(dy))

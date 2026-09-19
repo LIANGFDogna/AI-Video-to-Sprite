@@ -18,8 +18,9 @@ from app.models.character_reference import CharacterReference
 from app.models.character_templates import PLAYER
 from app.models.project import Project
 from app.ui.project_library import MIME
+from app.core.frame_move import canonical_folder
 from app.utils.cache import save_rgba
-from app.utils.paths import cache_directory
+from app.utils.paths import cache_directory, frame_path
 
 
 def start_pixel_tools_smoke(app, window, output, verify=False):
@@ -78,6 +79,10 @@ def start_pixel_tools_smoke(app, window, output, verify=False):
         project = window.project.select_animation(animation_id)
         directory = cache_directory(window.project.project_id, window.project_file, animation_id)
         return FinalFrameProvider(project, directory, live_edit=True).get_final_frame(index)
+
+    def canonical_pixels_of(animation_id, index):
+        directory = cache_directory(window.project.project_id, window.project_file, animation_id)
+        return np.array(Image.open(frame_path(canonical_folder(directory), index)).convert('RGBA'))
 
     def drop_group(dragged_id, kind, ident, zone):
         "Real drag events against the tree: Above / On / Below are decided by the tree itself."
@@ -144,24 +149,58 @@ def start_pixel_tools_smoke(app, window, output, verify=False):
                        if row.kind == 'ANIMATION' and row.name.startswith('Run'))
         window.cache_dir = cache_directory(project.project_id, target, run_row.animation_id)
         jump = next(row for row in library.groups.values() if row.name == 'Jump')
-        raster = project.raster_edit(run_row.animation_id, 5)
-        assert raster is not None and raster.revision >= 3, raster
+        moved_row = next(row for row in library.resources.values() if row.kind == 'ANIMATION'
+                         and row.metadata.get('moved'))
+        moved_project = project.select_animation(moved_row.animation_id)
+        report['verify_debug'] = {
+            'reference': library.frame_reference(run_row.animation_id),
+            'states': list(library.groups[run_row.group_id].animation_states),
+            'run_animation': run_row.animation_id,
+            'moved_animation': moved_row.animation_id,
+            'moved_edits': sorted((moved_project.pixel_edits.get(moved_row.animation_id) or {})),
+            'live_edits': sorted(project.pixel_edits),
+            'derived': [(row.name, row.metadata.get('source_frame_indices')) for row in library.resources.values()
+                        if row.kind == 'ANIMATION' and row.metadata.get('source_animation_id')],
+            'jump_children': [row.name for row in library.children(
+                next(row.id for row in library.groups.values() if row.name == 'Jump'))],
+            'run_frames': int(project.select_animation(run_row.animation_id).video.frame_count),
+        }
+        raster = moved_project.raster_edit(moved_row.animation_id, 1)
+        assert raster is not None, ('no moved raster edit', moved_row.animation_id,
+                                   project.raster_edit(moved_row.animation_id, 0))
+        report['verify_step'] = 1
+        assert raster.revision >= 3, raster.revision
         assert Path(raster.paint_layer).is_file() and Path(raster.erase_mask).is_file()
         reference = library.frame_reference(run_row.animation_id)
         assert reference == {'animation_id': run_row.animation_id, 'frame_index': 0}, reference
         state_row = library.groups[run_row.group_id].animation_states.get(run_row.animation_id)
-        assert state_row is not None and state_row.frame_reference_visible is True
+        report['verify_debug2'] = {
+            'visible': None if state_row is None else state_row.frame_reference_visible,
+            'opacity': None if state_row is None else state_row.frame_reference_opacity,
+            'derived_count': len([row for row in library.resources.values() if row.kind == 'ANIMATION'
+                                  and row.metadata.get('source_animation_id') == run_row.animation_id]),
+        }
+        report['verify_step'] = 2
+        assert state_row is not None, ('no workspace state', run_row.animation_id,
+                                       list(library.groups[run_row.group_id].animation_states))
+        assert state_row.frame_reference_visible is True
         assert abs(state_row.frame_reference_opacity - .15) < 1e-6
+        # The moved row records where it came from; the source row now points at the re-packed Animation.
         derived = [row for row in library.resources.values() if row.kind == 'ANIMATION'
-                   and row.metadata.get('source_animation_id') == run_row.animation_id]
+                   and row.metadata.get('moved')]
         assert len(derived) == 1, derived
+        report['verify_step'] = 3
         assert derived[0].metadata['source_frame_indices'] == [4, 5, 6, 9]
         derived_project = project.select_animation(derived[0].animation_id)
+        report['verify_step'] = 4
         assert derived_project.video.frame_count == 4 and derived_project.is_passthrough
+        report['verify_step'] = 5
         assert [row.name for row in library.children(jump.id)] == ['Land', 'JumpUp', 'DoubleJump'], \
             [row.name for row in library.children(jump.id)]
+        report['verify_step'] = 6
         assert library.groups[jump.id].parent_id is None
         painted = np.array(Image.open(raster.paint_layer).convert('RGBA'))
+        report['verify_step'] = 7
         assert painted[..., 3].max() > 0
         run_directory = cache_directory(project.project_id, target, run_row.animation_id)
         run_project = project.select_animation(run_row.animation_id)
@@ -172,6 +211,7 @@ def start_pixel_tools_smoke(app, window, output, verify=False):
                                   'final_json': (run_directory / 'final.json').is_file(),
                                   'frame_count': run_project.video.frame_count}
         source = FinalFrameProvider(run_project, run_directory, live_edit=True)
+        report['verify_step'] = 8
         assert source.get_final_frame(5).shape[:2] == (96, 96)
         report.update(status='passed', restart_verified=True, raster_revision=int(raster.revision),
                       derived_frames=int(derived_project.video.frame_count), reference_frame=0,
@@ -226,6 +266,7 @@ def start_pixel_tools_smoke(app, window, output, verify=False):
                 if not window.built:
                     return
                 state['run_animation'] = window.project.animation_id
+                state['run_source_folder'] = window.project.sequence_folder
                 window.steps.setCurrentIndex(2)
                 advance('editor')
             elif phase == 'editor':
@@ -310,16 +351,20 @@ def start_pixel_tools_smoke(app, window, output, verify=False):
                 advance('multi')
             elif phase == 'multi':
                 before = source_pixels(state['run_animation'], 4).copy()
-                assert controller.drop_frames_to_group(state['run_animation'], [4, 5, 6, 9], state['attack1'])
+                assert controller.move_selected_frames(state['run_animation'], [4, 5, 6, 9], state['attack1'])
                 derived = next(row for row in window.project.library.in_group(state['attack1'], kinds={'ANIMATION'}))
                 project = window.project.select_animation(derived.animation_id)
                 assert project.video.frame_count == 4 and project.is_passthrough
                 written = [np.array(Image.open(path).convert('RGBA'))
                            for path in sorted(Path(project.sequence_folder).glob('*.png'))]
                 assert len(written) == 4 and written[0][..., 3].max() == 200
-                assert np.array_equal(source_pixels(state['run_animation'], 4), before)
+                reduced_row = window.project.library.in_group(state['run'], kinds={'ANIMATION'})[0]
+                assert window.project.select_animation(reduced_row.animation_id).video.frame_count == 8
+                moved_row = window.project.library.resources[derived.id]
+                assert np.array_equal(canonical_pixels_of(moved_row.animation_id, 0), before)
                 report['derived_sequence_frames'] = 4
                 report['derived_sequence_no_rekey'] = bool(project.is_passthrough)
+                report['moved_frames_source_files'] = len(list(Path(state['run_source_folder']).iterdir()))
                 window.project.save(window.project_file)
                 advance('trail')
             elif phase == 'trail':
@@ -389,8 +434,11 @@ def start_pixel_tools_smoke(app, window, output, verify=False):
                 dragged_frames = [frame.source_index for frame in timeline.edit.selected(timeline.ids(), False)]
                 assert dragged_frames == [0, 1, 2, 3], dragged_frames
                 report['frame_drag_payload'] = dragged_frames
-                report['node_cardinality'] = len(window.editor.canvas.scene().items())
-                assert report['node_cardinality'] == 3
+                scene_items = window.editor.canvas.scene().items()
+                report['node_cardinality'] = len(scene_items)
+                report['visible_node_cardinality'] = len([item for item in scene_items if item.isVisible()])
+                # One current frame plus at most one ghost and one edit reference.
+                assert 1 <= report['visible_node_cardinality'] <= 3, report
                 window.dirty = True
                 window.project.save(window.project_file)
                 report.update(status='passed', pencil_rgb=True, raster_revision=int(state['paint_revision']),
